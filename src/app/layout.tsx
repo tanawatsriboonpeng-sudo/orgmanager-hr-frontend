@@ -1,24 +1,26 @@
 'use client'
-import type { Metadata } from 'next'
 import './globals.css'
 import { useEffect } from 'react'
 import { useAuthStore } from '@/lib/store'
 import { useRouter, usePathname } from 'next/navigation'
 
+const PUBLIC_PATHS = ['/login', '/forgot-password']
+
 function AuthProvider({ children }: { children: React.ReactNode }) {
   const { fetchMe, isAuthenticated, isLoading } = useAuthStore()
   const router = useRouter()
   const pathname = usePathname()
+  const isPublic = PUBLIC_PATHS.includes(pathname)
 
   useEffect(() => { fetchMe() }, [])
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated && pathname !== '/login') {
+    if (!isLoading && !isAuthenticated && !isPublic) {
       router.replace('/login')
     }
-  }, [isLoading, isAuthenticated, pathname])
+  }, [isLoading, isAuthenticated, isPublic])
 
-  if (isLoading && pathname !== '/login') {
+  if (isLoading && !isPublic) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#F7F7F5]">
         <div className="flex flex-col items-center gap-3">
@@ -28,7 +30,6 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       </div>
     )
   }
-
   return <>{children}</>
 }
 
