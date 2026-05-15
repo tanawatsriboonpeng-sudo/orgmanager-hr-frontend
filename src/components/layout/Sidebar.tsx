@@ -8,7 +8,7 @@ import {
   IconClipboardList, IconCash, IconSparkles,
   IconSpeakerphone, IconHierarchy, IconUserSearch,
   IconBuilding, IconLogout, IconChevronRight,
-  IconSettings, IconCrown, IconUsers, IconUser
+  IconSettings, IconCrown, IconUsers, IconUser, IconKey
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 
@@ -17,11 +17,13 @@ const ROLE_MENUS = {
     { href: '/dashboard', icon: IconLayoutDashboard, label: 'ภาพรวม' },
     { href: '/attendance', icon: IconClock, label: 'การลงเวลา' },
     { href: '/leave', icon: IconCalendarOff, label: 'การลา' },
+    { href: '/ot', icon: IconClockPlus, label: 'OT' },
     { href: '/payroll', icon: IconReceipt2, label: 'เงินเดือน' },
     { href: '/kpi', icon: IconChartBar, label: 'KPI' },
     { href: '/projects', icon: IconClipboardList, label: 'โปรเจกต์' },
     { href: '/finance', icon: IconCash, label: 'การเงิน' },
     { href: '/announcements', icon: IconSpeakerphone, label: 'ประกาศ' },
+    { href: '/employees', icon: IconUsers, label: 'พนักงาน' },
     { href: '/org-chart', icon: IconHierarchy, label: 'แผนผัง' },
   ],
   hr: [
@@ -31,6 +33,7 @@ const ROLE_MENUS = {
     { href: '/ot', icon: IconClockPlus, label: 'OT' },
     { href: '/payroll', icon: IconReceipt2, label: 'เงินเดือน' },
     { href: '/kpi', icon: IconChartBar, label: 'KPI' },
+    { href: '/employees', icon: IconUsers, label: 'พนักงาน' },
     { href: '/recruit', icon: IconUserSearch, label: 'สรรหา' },
     { href: '/projects', icon: IconClipboardList, label: 'โปรเจกต์' },
     { href: '/finance', icon: IconCash, label: 'การเงิน' },
@@ -57,7 +60,7 @@ export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { user, logout } = useAuthStore()
-  const role = user?.role || 'employee'
+  const role = (user?.role || 'employee') as 'owner' | 'hr' | 'employee'
   const menus = ROLE_MENUS[role]
   const RoleIcon = ROLE_ICONS[role]
 
@@ -74,7 +77,7 @@ export default function Sidebar() {
           <IconBuilding size={15} className="text-white" />
         </div>
         <div>
-          <div className="text-[13px] font-semibold text-[#111110]">OrgManager</div>
+          <div className="text-[12px] font-semibold text-[#111110] leading-tight">สิริคอนส์</div>
           <div className="text-[10px] text-gray-400">HR System</div>
         </div>
       </div>
@@ -127,7 +130,11 @@ export default function Sidebar() {
       </nav>
 
       {/* Bottom actions */}
-      <div className="px-2 pb-3 space-y-0.5">
+      <div className="px-2 pb-3 space-y-0.5 border-t border-black/[0.06] pt-2 mt-1">
+        <Link href="/settings/change-password" className="flex items-center gap-2.5 px-3 py-2 rounded-[9px] text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition-all">
+          <IconKey size={16} />
+          เปลี่ยนรหัสผ่าน
+        </Link>
         <Link href="/settings" className="flex items-center gap-2.5 px-3 py-2 rounded-[9px] text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition-all">
           <IconSettings size={16} />
           ตั้งค่า
