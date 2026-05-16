@@ -1,7 +1,7 @@
 'use client'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthStore } from '@/lib/store'
-import { employeeApi, orgApi } from '@/lib/api'
+import { employeeApi, orgApi, departmentApi } from '@/lib/api'
 import api from '@/lib/api'
 import {
   IconUserPlus, IconEdit, IconKey, IconCheck, IconX, IconEye,
@@ -19,7 +19,13 @@ const ROLES = [
   { value: 'employee', label: 'พนักงาน' },
 ]
 
-const DEPARTMENTS = ['IT', 'HR', 'Finance', 'Operations', 'Marketing', 'ทั่วไป']
+// Departments now come from /api/departments (managed in /org-chart) so
+// the dropdown stays in sync with what HR has actually set up. Falls back
+// to a small seed list only when the API returns nothing on first ever
+// load, so a brand-new install still has options.
+const SEED_DEPARTMENTS = ['IT', 'HR', 'Finance', 'Operations', 'Marketing', 'ทั่วไป']
+
+interface Department { id: string; name: string }
 
 interface Employee {
   id: string
@@ -54,6 +60,7 @@ const ROLE_ORDER: Record<string, number> = { owner: 0, hr: 1, employee: 2 }
 export default function EmployeesPage() {
   const { user } = useAuthStore()
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [departments, setDepartments] = useState<Department[]>([])
   const [companyName, setCompanyName] = useState<string>('')
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('')
@@ -97,7 +104,14 @@ export default function EmployeesPage() {
     } catch {}
   }
 
-  useEffect(() => { load(); loadCompany() }, [])
+  const loadDepartments = async () => {
+    try {
+      const r = await departmentApi.list()
+      setDepartments(r.data.data || [])
+    } catch {}
+  }
+
+  useEffect(() => { load(); loadCompany(); loadDepartments() }, [])
 
   // Auto-dismiss success messages after 3.5s; errors stay until user closes.
   useEffect(() => {
@@ -116,8 +130,24 @@ export default function EmployeesPage() {
     return () => { document.removeEventListener('click', onClick); document.removeEventListener('keydown', onKey) }
   }, [openMenuId])
 
-  // Derive department options from loaded data so the filter only offers
-  // departments that actually exist on someone.
+  // Dept options for the EDIT FORM dropdown — the authoritative list from
+  // /api/departments (managed in /org-chart). Fall back to a seed list
+  // only if the org has no departments configured yet. Also keep the
+  // employee's current dept in the options even if it was removed from
+  // the master list, so opening their form doesn't silently re-assign.
+  const formDeptOptions = useMemo(() => {
+    const names = departments.length > 0
+      ? departments.map(d => d.name)
+      : [...SEED_DEPARTMENTS]
+    if (editEmp?.department_name && !names.includes(editEmp.department_name)) {
+      names.push(editEmp.department_name)
+    }
+    return names
+  }, [departments, editEmp])
+
+  // Dept options for the FILTER BAR — only show depts that actually
+  // appear on at least one employee, so users don't filter to an empty
+  // set just because the dept exists but is unused.
   const deptOptions = useMemo(() => {
     const set = new Set<string>()
     for (const e of employees) if (e.department_name) set.add(e.department_name)
@@ -161,8 +191,11 @@ export default function EmployeesPage() {
   const hasFilter = !!(search || roleFilter || deptFilter || statusFilter)
 
   const resetForm = () => {
+    // Default new-employee dept to the first real dept from the loaded
+    // list so we don't submit a stale 'IT' that may not exist anymore.
+    const defaultDept = departments[0]?.name || SEED_DEPARTMENTS[0]
     setForm({ firstName: '', lastName: '', email: '', employeeId: '',
-      position: '', department: 'IT', role: 'employee',
+      position: '', department: defaultDept, role: 'employee',
       baseSalary: '', password: '', confirmPassword: '' })
     setEditEmp(null)
     setShowForm(false)
@@ -350,8 +383,14 @@ export default function EmployeesPage() {
               <label className="label">แผนก</label>
               <select className="input" value={form.department}
                 onChange={e => setForm(p => ({ ...p, department: e.target.value }))}>
-                {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+                {formDeptOptions.length === 0 && <option value="">— ไม่มีแผนก —</option>}
+                {formDeptOptions.map(d => <option key={d}>{d}</option>)}
               </select>
+              {departments.length === 0 && (
+                <p className="text-[10px] text-gray-400 mt-1">
+                  ยังไม่ได้เพิ่มแผนกใน <Link href="/org-chart" className="text-[#1D9E75] hover:underline">หน้าแผนผัง</Link>
+                </p>
+              )}
             </div>
             <div>
               <label className="label">สิทธิ์การใช้งาน</label>
