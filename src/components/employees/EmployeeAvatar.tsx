@@ -1,14 +1,17 @@
 'use client'
 import clsx from 'clsx'
 
+// All name/avatar fields accept null because LEFT JOINs in the backend
+// (e.g. KpiReview.reviewer_* when no reviewer is assigned) return null
+// rather than absent. The `|| ''` fallbacks below handle null at runtime.
 interface Person {
-  first_name?: string
-  last_name?: string
-  firstName?: string
-  lastName?: string
+  first_name?: string | null
+  last_name?: string | null
+  firstName?: string | null
+  lastName?: string | null
   avatar_url?: string | null
   avatarUrl?: string | null
-  role?: string
+  role?: string | null
 }
 
 const ROLE_COLOR: Record<string, string> = {
