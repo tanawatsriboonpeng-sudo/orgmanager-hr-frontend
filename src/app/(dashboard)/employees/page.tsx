@@ -196,6 +196,9 @@ export default function EmployeesPage() {
           position: form.position, department: form.department,
           baseSalary: parseFloat(form.baseSalary) || 0,
           role: form.role,
+          // Only send employeeId if HR actually changed it, so a no-op
+          // PATCH doesn't trigger the rename branch on the backend.
+          ...(form.employeeId !== editEmp.employee_id ? { employeeId: form.employeeId.trim() } : {}),
         })
         setMsg({ text: 'อัปเดตข้อมูลพนักงานแล้ว', ok: true })
       } else {
@@ -294,14 +297,13 @@ export default function EmployeesPage() {
             <h2 className="text-sm font-semibold">
               {editEmp ? `แก้ไขข้อมูล — ${editEmp.first_name} ${editEmp.last_name}` : 'เพิ่มพนักงานใหม่'}
             </h2>
-            {/* In edit mode, surface email + employee_id as read-only chips
-                instead of disabled inputs (they can't change, so they don't
-                belong in the editable grid). */}
+            {/* Email is the login identity and stays immutable, shown as a
+                read-only chip. employee_id (the human code) lives inside
+                the editable grid below. */}
             {editEmp && (
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span className="px-2 py-1 rounded-md bg-gray-100 font-mono text-gray-700">{editEmp.employee_id}</span>
-                <span className="px-2 py-1 rounded-md bg-gray-100 text-gray-700">{editEmp.email}</span>
-              </div>
+              <span className="px-2 py-1 rounded-md bg-gray-100 text-xs text-gray-700">
+                {editEmp.email}
+              </span>
             )}
           </div>
           <div className="grid grid-cols-2 gap-3 mb-3">
@@ -317,24 +319,27 @@ export default function EmployeesPage() {
                 onChange={e => setForm(p => ({ ...p, lastName: e.target.value }))}
                 placeholder="นามสกุล" />
             </div>
-            {/* Email + employee_id are immutable for existing employees,
-                so we only show them as inputs when creating new ones. */}
+            {/* Email is the login identity → only editable when creating
+                a brand-new account. employee_id (display code) IS editable
+                in both modes — backend updates users.employee_id +
+                employees.employee_id together in a transaction. */}
             {!editEmp && (
-              <>
-                <div>
-                  <label className="label">อีเมล *</label>
-                  <input className="input" type="email" value={form.email}
-                    onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
-                    placeholder="email@company.co.th" />
-                </div>
-                <div>
-                  <label className="label">รหัสพนักงาน *</label>
-                  <input className="input" value={form.employeeId}
-                    onChange={e => setForm(p => ({ ...p, employeeId: e.target.value }))}
-                    placeholder="EMP-001" />
-                </div>
-              </>
+              <div>
+                <label className="label">อีเมล *</label>
+                <input className="input" type="email" value={form.email}
+                  onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+                  placeholder="email@company.co.th" />
+              </div>
             )}
+            <div>
+              <label className="label">รหัสพนักงาน *</label>
+              <input
+                className="input font-mono"
+                value={form.employeeId}
+                onChange={e => setForm(p => ({ ...p, employeeId: e.target.value }))}
+                placeholder="EMP-001"
+              />
+            </div>
             <div>
               <label className="label">ตำแหน่ง</label>
               <input className="input" value={form.position}
