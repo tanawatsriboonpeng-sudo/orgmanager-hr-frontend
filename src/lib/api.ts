@@ -133,6 +133,27 @@ export const employeeApi = {
     api.post('/employees/weekly-shifts/bulk', { items }),
 }
 
+// Position (job-title hierarchy) APIs
+export interface Position {
+  id: string
+  code?: string
+  name: string
+  description?: string
+  parent_id?: string | null
+}
+export interface PositionUpsert {
+  code?: string
+  name?: string
+  description?: string
+  parentId?: string | null
+}
+export const positionApi = {
+  list: () => api.get('/positions'),
+  create: (data: PositionUpsert) => api.post('/positions', data),
+  update: (id: string, data: PositionUpsert) => api.patch(`/positions/${id}`, data),
+  delete: (id: string) => api.delete(`/positions/${id}`),
+}
+
 // Department APIs
 export const departmentApi = {
   list: () => api.get('/departments'),

@@ -6,9 +6,10 @@ import {
   IconCrown, IconUsers, IconHierarchy,
   IconBuilding, IconBriefcase, IconCircleOff,
   IconEdit, IconX, IconCheck, IconPlus, IconTrash,
-  IconPhoto, IconUserCircle
+  IconPhoto, IconUserCircle, IconSitemap
 } from '@tabler/icons-react'
 import clsx from 'clsx'
+import PositionTree from '@/components/positions/PositionTree'
 
 interface Employee {
   id: string
@@ -534,6 +535,7 @@ function DepartmentPanel({
 
 export default function OrgChartPage() {
   const { user } = useAuthStore()
+  const [tab, setTab] = useState<'employees' | 'positions'>('employees')
   const [employees, setEmployees] = useState<Employee[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
   const [loading, setLoading] = useState(true)
@@ -600,19 +602,20 @@ export default function OrgChartPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-[#111110] flex items-center gap-2">
             <IconHierarchy size={20} className="text-[#1D9E75]" />
             แผนผังองค์กร
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            พนักงาน {totalActive} คน · {departments.length} แผนก
-            {totalInactive > 0 && <> · ระงับ {totalInactive} คน</>}
-            {isHR && <> · <span className="text-[#1D9E75]">hover การ์ดเพื่อแก้ไข</span></>}
+            {tab === 'employees'
+              ? <>พนักงาน {totalActive} คน · {departments.length} แผนก{totalInactive > 0 && <> · ระงับ {totalInactive} คน</>}{isHR && <> · <span className="text-[#1D9E75]">hover การ์ดเพื่อแก้ไข</span></>}</>
+              : <>โครงสร้างตำแหน่งงานแบบลำดับชั้น{isHR && <> · <span className="text-[#1D9E75]">hover แถวเพื่อเพิ่ม/แก้ไข/ลบ</span></>}</>
+            }
           </p>
         </div>
-        {totalInactive > 0 && (
+        {tab === 'employees' && totalInactive > 0 && (
           <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
             <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="rounded" />
             แสดงพนักงานที่ระงับ
@@ -620,6 +623,42 @@ export default function OrgChartPage() {
         )}
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-1 mb-5 border-b border-black/[0.06]">
+        <button
+          onClick={() => setTab('employees')}
+          className={clsx(
+            'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+            tab === 'employees'
+              ? 'border-[#1D9E75] text-[#085041]'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          )}
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <IconUsers size={14} />
+            แผนผังพนักงาน
+          </span>
+        </button>
+        <button
+          onClick={() => setTab('positions')}
+          className={clsx(
+            'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+            tab === 'positions'
+              ? 'border-[#1D9E75] text-[#085041]'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          )}
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <IconSitemap size={14} />
+            โครงสร้างตำแหน่ง
+          </span>
+        </button>
+      </div>
+
+      {tab === 'positions' && <PositionTree isHR={!!isHR} />}
+
+      {tab === 'employees' && (
+      <>
       {/* Department management */}
       <DepartmentPanel
         departments={departments}
@@ -727,6 +766,8 @@ export default function OrgChartPage() {
             </div>
           )}
         </>
+      )}
+      </>
       )}
 
       {editingEmp && (
