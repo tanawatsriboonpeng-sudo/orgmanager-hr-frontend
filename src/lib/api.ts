@@ -100,6 +100,12 @@ export interface EmployeeUpdate {
   bankAccount?: string
   bankName?: string
   nationalId?: string
+  workDays?: number[]   // 0=Sun..6=Sat
+}
+
+export interface WorkDaysBulkItem {
+  employeeId: string
+  workDays: number[]
 }
 
 export interface SelfUpdate {
@@ -113,6 +119,8 @@ export const employeeApi = {
   me: () => api.get('/employees/me'),
   update: (id: string, data: EmployeeUpdate) => api.patch(`/employees/${id}`, data),
   updateMe: (data: SelfUpdate) => api.patch('/employees/me', data),
+  bulkUpdateWorkDays: (items: WorkDaysBulkItem[]) =>
+    api.post('/employees/work-days/bulk', { items }),
 }
 
 // Department APIs

@@ -6,10 +6,11 @@ import dayjs from 'dayjs'
 import {
   IconCalendarTime, IconChevronLeft, IconChevronRight,
   IconCheck, IconX, IconDeviceFloppy, IconRefresh,
-  IconSettings, IconCalendarStats
+  IconSettings, IconCalendarStats, IconCalendarOff
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import ShiftRulesEditor from '@/components/shifts/ShiftRulesEditor'
+import WorkDaysEditor from '@/components/shifts/WorkDaysEditor'
 
 interface Employee {
   id: string
@@ -56,7 +57,7 @@ export default function ShiftsPage() {
   const isHR = user?.role === 'hr' || user?.role === 'owner'
   const isOwner = user?.role === 'owner'
 
-  const [tab, setTab] = useState<'schedule' | 'rules'>('schedule')
+  const [tab, setTab] = useState<'schedule' | 'rules' | 'workdays'>('schedule')
 
   if (!isHR) {
     return (
@@ -77,27 +78,28 @@ export default function ShiftsPage() {
           กะการทำงาน
         </h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          {tab === 'schedule'
-            ? 'กำหนดกะของพนักงานรายวัน — ค่าว่างจะใช้กะเริ่มต้นของพนักงานคนนั้น'
-            : 'ตั้งค่ารายละเอียดของแต่ละกะ — เวลาเริ่ม/เลิก เกณฑ์สาย/ขาด'}
+          {tab === 'schedule' && 'กำหนดกะของพนักงานรายวัน — ค่าว่างจะใช้กะเริ่มต้นของพนักงานคนนั้น'}
+          {tab === 'rules' && 'ตั้งค่ารายละเอียดของแต่ละกะ — เวลาเริ่ม/เลิก เกณฑ์สาย/ขาด'}
+          {tab === 'workdays' && 'กำหนดวันทำงาน/วันหยุดประจำของแต่ละพนักงาน — รูปแบบรายสัปดาห์'}
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 border-b border-black/[0.06]">
+      <div className="flex gap-1 mb-5 border-b border-black/[0.06] overflow-x-auto">
         <TabButton active={tab === 'schedule'} onClick={() => setTab('schedule')} icon={IconCalendarStats}>
           ตารางรายสัปดาห์
+        </TabButton>
+        <TabButton active={tab === 'workdays'} onClick={() => setTab('workdays')} icon={IconCalendarOff}>
+          วันทำงาน-วันหยุด
         </TabButton>
         <TabButton active={tab === 'rules'} onClick={() => setTab('rules')} icon={IconSettings}>
           ตั้งค่ากะ
         </TabButton>
       </div>
 
-      {tab === 'rules' ? (
-        <ShiftRulesEditor isOwner={isOwner} />
-      ) : (
-        <ScheduleTab />
-      )}
+      {tab === 'rules' && <ShiftRulesEditor isOwner={isOwner} />}
+      {tab === 'workdays' && <WorkDaysEditor />}
+      {tab === 'schedule' && <ScheduleTab />}
     </div>
   )
 }
