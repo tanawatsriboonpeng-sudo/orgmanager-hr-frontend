@@ -54,8 +54,8 @@ export const authApi = {
 
 // Attendance APIs
 export const attendanceApi = {
-  checkIn: (lat?: number, lng?: number, method = 'gps') =>
-    api.post('/attendance/check-in', { lat, lng, method }),
+  checkIn: (lat?: number, lng?: number, method = 'gps', selfie?: string) =>
+    api.post('/attendance/check-in', { lat, lng, method, selfie }),
   checkOut: (lat?: number, lng?: number) =>
     api.post('/attendance/check-out', { lat, lng }),
   today: () => api.get('/attendance/today'),

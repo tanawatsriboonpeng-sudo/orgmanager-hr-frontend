@@ -180,10 +180,16 @@ export default function AttendancePage() {
     )
   }
 
-  const doCheckIn = async () => {
+  // Selfie capture flow: opens a modal with a live webcam preview, lets
+  // the user snap a frame, then submits the check-in with the JPEG dataURL
+  // attached. Kept separate from doCheckIn so the camera modal can call
+  // the same submit path on its own schedule.
+  const [showSelfie, setShowSelfie] = useState(false)
+
+  const doCheckIn = async (selfie?: string) => {
     setActing(true)
     try {
-      const res = await attendanceApi.checkIn(coords?.lat, coords?.lng)
+      const res = await attendanceApi.checkIn(coords?.lat, coords?.lng, 'gps', selfie)
       flash(res.data.message)
       setDistance(res.data.data?.distance ?? null)
       loadToday(); loadDaily()
@@ -298,7 +304,17 @@ export default function AttendancePage() {
 
               {todayLog ? (
                 <div className="p-3 bg-[#E1F5EE]/60 rounded-[10px] mb-4 text-sm">
-                  <div className="flex justify-between mb-1.5">
+                  <div className="flex items-start gap-3 mb-2">
+                    {todayLog.check_in_selfie && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={todayLog.check_in_selfie}
+                        alt="selfie"
+                        className="w-14 h-14 rounded-[8px] object-cover border border-black/[0.05] flex-shrink-0"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                  <div className="flex justify-between">
                     <span className="text-gray-600">เวลาเข้า</span>
                     <span className="font-medium tabular-nums">
                       {todayLog.check_in_at ? dayjs(todayLog.check_in_at).format('HH:mm น.') : '—'}
@@ -332,6 +348,8 @@ export default function AttendancePage() {
                       </div>
                     </div>
                   )}
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="p-3 bg-gray-50 rounded-[10px] mb-4 text-xs text-gray-500 text-center">
@@ -375,10 +393,13 @@ export default function AttendancePage() {
                 )}
               </div>
 
-              {/* Buttons */}
+              {/* Buttons. เช็คอิน opens the selfie modal first; the modal
+                  calls doCheckIn(dataUrl) once the user confirms the photo.
+                  Disabled until GPS resolves so we don't open a camera
+                  modal just to discover the user is out of radius. */}
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={doCheckIn}
+                  onClick={() => setShowSelfie(true)}
                   disabled={!canCheckIn || acting || locStatus !== 'ok'}
                   className="btn btn-primary justify-center py-3 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -386,7 +407,7 @@ export default function AttendancePage() {
                   เช็คอิน
                 </button>
                 <button
-                  onClick={doCheckOut}
+                  onClick={() => doCheckOut()}
                   disabled={!canCheckOut || acting || locStatus !== 'ok'}
                   className="btn justify-center py-3 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -515,6 +536,17 @@ export default function AttendancePage() {
             )}
           </div>
         </>
+      )}
+
+      {showSelfie && (
+        <SelfieModal
+          onClose={() => setShowSelfie(false)}
+          onSubmit={async (dataUrl) => {
+            setShowSelfie(false)
+            await doCheckIn(dataUrl)
+          }}
+          busy={acting}
+        />
       )}
     </div>
   )
@@ -646,6 +678,162 @@ function Stat({ label, value, color }: { label: string; value: number; color: st
     <div className="text-center bg-white rounded-[10px] p-2 border border-black/[0.04]">
       <div className="text-xl font-semibold tabular-nums" style={{ color }}>{value}</div>
       <div className="text-[11px] text-gray-500 mt-0.5">{label}</div>
+    </div>
+  )
+}
+
+/* ===== Selfie capture modal =====
+   Two-step flow: live webcam preview → snap → preview the captured frame →
+   confirm (which calls onSubmit with the JPEG dataURL) or re-take.
+   The stream is torn down on every unmount + on every "re-take" so the
+   camera light doesn't stay on longer than needed. JPEG quality 0.7 +
+   a 480px max edge keeps the dataURL ~30-80KB, well under the backend's
+   500KB cap. */
+function SelfieModal({
+  onClose, onSubmit, busy,
+}: {
+  onClose: () => void
+  onSubmit: (dataUrl: string) => void
+  busy: boolean
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const [phase, setPhase] = useState<'starting' | 'live' | 'preview' | 'error'>('starting')
+  const [errorMsg, setErrorMsg] = useState('')
+  const [snapshot, setSnapshot] = useState<string | null>(null)
+
+  const stopStream = () => {
+    if (streamRef.current) {
+      for (const t of streamRef.current.getTracks()) t.stop()
+      streamRef.current = null
+    }
+  }
+
+  const startCamera = useCallback(async () => {
+    stopStream()
+    setSnapshot(null)
+    setPhase('starting')
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('อุปกรณ์นี้ไม่รองรับการใช้กล้อง')
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false,
+      })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play().catch(() => {})
+      }
+      setPhase('live')
+    } catch (e: any) {
+      const msg = e?.name === 'NotAllowedError'
+        ? 'กล้องถูกปฏิเสธ — โปรดอนุญาตในการตั้งค่าเบราว์เซอร์แล้วเปิดใหม่'
+        : e?.message || 'เปิดกล้องไม่สำเร็จ'
+      setErrorMsg(msg)
+      setPhase('error')
+    }
+  }, [])
+
+  useEffect(() => {
+    startCamera()
+    return () => stopStream()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const snap = () => {
+    const v = videoRef.current
+    if (!v) return
+    // Down-scale longest edge to 480 to keep the dataURL small.
+    const srcW = v.videoWidth || 640
+    const srcH = v.videoHeight || 480
+    const scale = 480 / Math.max(srcW, srcH)
+    const w = Math.round(srcW * scale)
+    const h = Math.round(srcH * scale)
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.drawImage(v, 0, 0, w, h)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.7)
+    setSnapshot(dataUrl)
+    setPhase('preview')
+    stopStream()
+  }
+
+  const retake = () => { startCamera() }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-[14px] shadow-xl w-full max-w-md max-h-[92vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-black/[0.06]">
+          <h2 className="text-base font-semibold text-[#111110]">
+            {phase === 'preview' ? 'ตรวจสอบรูปก่อนเช็คอิน' : 'ถ่ายเซลฟี่เพื่อเช็คอิน'}
+          </h2>
+          <button onClick={onClose} className="btn btn-ghost p-1.5" aria-label="ปิด">
+            <IconX size={16} />
+          </button>
+        </div>
+        <div className="p-4">
+          <div className="relative w-full rounded-[10px] overflow-hidden bg-black/90 aspect-[4/3] mb-3">
+            {phase === 'live' && (
+              <video
+                ref={videoRef}
+                className="w-full h-full object-cover"
+                playsInline
+                muted
+              />
+            )}
+            {phase === 'preview' && snapshot && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={snapshot} alt="snapshot" className="w-full h-full object-cover" />
+            )}
+            {phase === 'starting' && (
+              <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm">
+                กำลังเปิดกล้อง…
+              </div>
+            )}
+            {phase === 'error' && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center text-white/90 text-sm">
+                <IconAlertTriangle size={28} className="mb-2 text-amber-300" />
+                <p>{errorMsg}</p>
+              </div>
+            )}
+          </div>
+
+          {phase === 'live' && (
+            <button
+              onClick={snap}
+              className="btn btn-primary w-full justify-center py-3"
+            >
+              <IconCheck size={16} /> ถ่ายภาพ
+            </button>
+          )}
+          {phase === 'preview' && (
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={retake} disabled={busy} className="btn justify-center py-3">
+                <IconRefresh size={15} /> ถ่ายใหม่
+              </button>
+              <button
+                onClick={() => snapshot && onSubmit(snapshot)}
+                disabled={busy}
+                className="btn btn-primary justify-center py-3 disabled:opacity-50"
+              >
+                <IconCheck size={16} /> {busy ? 'กำลังส่ง…' : 'เช็คอิน'}
+              </button>
+            </div>
+          )}
+          {phase === 'error' && (
+            <button onClick={startCamera} className="btn w-full justify-center py-3">
+              ลองใหม่
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
