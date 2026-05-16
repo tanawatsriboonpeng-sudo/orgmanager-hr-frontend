@@ -8,8 +8,8 @@ import {
   IconClockPlus, IconReceipt2, IconChartBar,
   IconClipboardList,
   IconSpeakerphone, IconHierarchy, IconHistory,
-  IconLogout, IconChevronRight,
-  IconSettings, IconCrown, IconUsers, IconUser,
+  IconBuilding, IconLogout, IconChevronRight,
+  IconSettings, IconCrown, IconUsers, IconUser, IconKey,
   IconMenu2, IconX, IconCalendarTime
 } from '@tabler/icons-react'
 import clsx from 'clsx'

@@ -1,5 +1,4 @@
 'use client'
-// @ts-nocheck — diagnostic only, will revert
 import { useEffect, useMemo, useState } from 'react'
 import { otApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
@@ -485,7 +484,12 @@ export default function OTPage() {
                         {(isApproved || isRejected) && (approverName || r.rejected_reason) && (
                           <div className="text-[11px] text-gray-400 mt-1">
                             {isApproved && approverName && <>อนุมัติโดย {approverName}</>}
-                            {isRejected && ds !== 'cancelled' && (
+                            {/* When isRejected is true, ds is already
+                                narrowed to 'rejected' (cancellations have
+                                ds='cancelled' and isRejected=false), so we
+                                don't need an extra ds!=='cancelled' guard
+                                — TS even flags it as a no-overlap compare. */}
+                            {isRejected && (
                               <>
                                 <span className="inline-flex items-center gap-1 text-red-500">
                                   <IconUserX size={11} /> ปฏิเสธ
