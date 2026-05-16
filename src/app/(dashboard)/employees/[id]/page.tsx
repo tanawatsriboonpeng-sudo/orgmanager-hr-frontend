@@ -149,8 +149,12 @@ export default function EmployeeProfilePage() {
         const d = await departmentApi.list().catch(() => null)
         if (d) setDepartments(d.data.data || [])
       }
-      const p = await positionApi.list().catch(() => null)
-      if (p) setPositions(p.data.data || [])
+      // Renamed local from `p` → `posRes` because line 141 already
+      // declared `const p = res.data.data as Profile` in this same block;
+      // TS/SWC rejected the redeclaration and the Vercel build failed
+      // for commit 8e8b1db2.
+      const posRes = await positionApi.list().catch(() => null)
+      if (posRes) setPositions(posRes.data.data || [])
     } catch (e: any) {
       setMsg({ text: e.response?.data?.message || 'โหลดข้อมูลไม่ได้', ok: false })
     } finally { setLoading(false) }
