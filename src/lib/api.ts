@@ -398,6 +398,32 @@ export const payrollApi = {
     api.post('/payroll/bulk-generate', { month, year }),
 }
 
+// Org Settings APIs (singleton, owner-editable)
+export interface OrgSettings {
+  id?: number
+  company_name: string | null
+  company_name_en: string | null
+  company_address: string | null
+  company_phone: string | null
+  company_email: string | null
+  company_tax_id: string | null
+  company_logo: string | null
+  updated_at?: string
+}
+export interface OrgSettingsUpdate {
+  companyName?: string
+  companyNameEn?: string
+  companyAddress?: string
+  companyPhone?: string
+  companyEmail?: string
+  companyTaxId?: string
+  companyLogo?: string
+}
+export const orgApi = {
+  get: () => api.get('/org-settings'),
+  update: (data: OrgSettingsUpdate) => api.patch('/org-settings', data),
+}
+
 // Audit Log APIs
 export const auditApi = {
   list: () => api.get('/audit-logs'),

@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
-import { employeeApi } from '@/lib/api'
+import { employeeApi, orgApi, type OrgSettings } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
   IconUser, IconKey, IconMail, IconBuildingCommunity,
@@ -270,6 +270,9 @@ export default function SettingsPage() {
         <IconChevronRight size={16} className="text-gray-300 group-hover:text-gray-500" />
       </Link>
 
+      {/* Company / Org Settings — owner only */}
+      {role === 'owner' && <OrgSettingsCard />}
+
       {/* Security Section */}
       <div className="card">
         <h2 className="text-sm font-semibold text-[#111110] mb-3 flex items-center gap-2">
@@ -307,6 +310,153 @@ function InfoRow({ icon: Icon, label, value }: { icon: any; label: string; value
         <span className="text-xs text-gray-500">{label}</span>
         <span className="text-sm text-[#111110] truncate">{value}</span>
       </div>
+    </div>
+  )
+}
+
+function OrgSettingsCard() {
+  const [data, setData] = useState<OrgSettings | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState({
+    companyName: '', companyNameEn: '', companyAddress: '',
+    companyPhone: '', companyEmail: '', companyTaxId: '',
+  })
+  const [busy, setBusy] = useState(false)
+  const [localMsg, setLocalMsg] = useState({ text: '', ok: true })
+
+  const load = async () => {
+    try {
+      const r = await orgApi.get()
+      const d = r.data.data as OrgSettings
+      setData(d)
+      setForm({
+        companyName: d?.company_name || '',
+        companyNameEn: d?.company_name_en || '',
+        companyAddress: d?.company_address || '',
+        companyPhone: d?.company_phone || '',
+        companyEmail: d?.company_email || '',
+        companyTaxId: d?.company_tax_id || '',
+      })
+    } catch {}
+  }
+  useEffect(() => { load() }, [])
+
+  const save = async () => {
+    setBusy(true)
+    setLocalMsg({ text: '', ok: true })
+    try {
+      await orgApi.update({
+        companyName: form.companyName.trim() || undefined,
+        companyNameEn: form.companyNameEn.trim() || undefined,
+        companyAddress: form.companyAddress.trim() || undefined,
+        companyPhone: form.companyPhone.trim() || undefined,
+        companyEmail: form.companyEmail.trim() || undefined,
+        companyTaxId: form.companyTaxId.trim() || undefined,
+      })
+      setLocalMsg({ text: 'บันทึกข้อมูลบริษัทแล้ว', ok: true })
+      setEditing(false)
+      load()
+      setTimeout(() => setLocalMsg({ text: '', ok: true }), 3500)
+    } catch (e: any) {
+      setLocalMsg({ text: e.response?.data?.message || 'เกิดข้อผิดพลาด', ok: false })
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card mb-5">
+      <div className="flex items-start justify-between mb-3">
+        <h2 className="text-sm font-semibold text-[#111110] flex items-center gap-2">
+          <IconBuildingCommunity size={15} className="text-gray-400" />
+          ข้อมูลบริษัท
+        </h2>
+        {!editing && (
+          <button onClick={() => setEditing(true)} className="btn text-xs">
+            <IconEdit size={13} /> แก้ไข
+          </button>
+        )}
+      </div>
+
+      {!editing ? (
+        <div className="space-y-3">
+          <InfoRow icon={IconBuildingCommunity} label="ชื่อบริษัท" value={data?.company_name || 'ยังไม่ระบุ'} />
+          <InfoRow icon={IconBuildingCommunity} label="ชื่อ (อังกฤษ)" value={data?.company_name_en} />
+          <InfoRow icon={IconPhone} label="โทรศัพท์" value={data?.company_phone} />
+          <InfoRow icon={IconMail} label="อีเมล" value={data?.company_email} />
+          <InfoRow icon={IconBriefcase} label="เลขประจำตัวผู้เสียภาษี" value={data?.company_tax_id} />
+          {data?.company_address && (
+            <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-black/[0.05]">
+              <div className="mb-1">ที่อยู่</div>
+              <div className="text-[#111110] whitespace-pre-wrap text-sm">{data.company_address}</div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">ชื่อบริษัท (ไทย)</label>
+              <input className="input" value={form.companyName}
+                onChange={e => setForm(p => ({ ...p, companyName: e.target.value }))}
+                placeholder="บริษัท ตัวอย่าง จำกัด" />
+            </div>
+            <div>
+              <label className="label">ชื่อ (อังกฤษ)</label>
+              <input className="input" value={form.companyNameEn}
+                onChange={e => setForm(p => ({ ...p, companyNameEn: e.target.value }))}
+                placeholder="Example Co., Ltd." />
+            </div>
+            <div>
+              <label className="label">โทรศัพท์</label>
+              <input className="input" value={form.companyPhone}
+                onChange={e => setForm(p => ({ ...p, companyPhone: e.target.value }))}
+                placeholder="02-XXX-XXXX" />
+            </div>
+            <div>
+              <label className="label">อีเมล</label>
+              <input className="input" type="email" value={form.companyEmail}
+                onChange={e => setForm(p => ({ ...p, companyEmail: e.target.value }))}
+                placeholder="contact@company.co.th" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label">เลขประจำตัวผู้เสียภาษี</label>
+              <input className="input" value={form.companyTaxId}
+                onChange={e => setForm(p => ({ ...p, companyTaxId: e.target.value }))}
+                placeholder="0-0000-00000-00-0" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label">ที่อยู่</label>
+              <textarea className="input min-h-[70px]" value={form.companyAddress}
+                onChange={e => setForm(p => ({ ...p, companyAddress: e.target.value }))}
+                placeholder="เลขที่ ถนน แขวง/ตำบล เขต/อำเภอ จังหวัด รหัสไปรษณีย์" />
+            </div>
+          </div>
+
+          {localMsg.text && (
+            <div className={clsx('flex items-center gap-2 p-2.5 rounded-[10px] text-xs',
+              localMsg.ok ? 'bg-[#E1F5EE] text-[#085041]' : 'bg-red-50 text-red-600')}>
+              {localMsg.ok ? <IconCheck size={13} /> : <IconX size={13} />}
+              {localMsg.text}
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={save} disabled={busy} className="btn btn-primary text-sm">
+              {busy ? 'กำลังบันทึก...' : 'บันทึก'}
+            </button>
+            <button onClick={() => { setEditing(false); load() }} className="btn text-sm">
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!editing && localMsg.text && (
+        <div className={clsx('flex items-center gap-2 p-2.5 rounded-[10px] text-xs mt-3',
+          localMsg.ok ? 'bg-[#E1F5EE] text-[#085041]' : 'bg-red-50 text-red-600')}>
+          {localMsg.ok ? <IconCheck size={13} /> : <IconX size={13} />}
+          {localMsg.text}
+        </div>
+      )}
     </div>
   )
 }
