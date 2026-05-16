@@ -101,6 +101,35 @@ export interface EmployeeUpdate {
   bankName?: string
   nationalId?: string
   workDays?: number[]   // 0=Sun..6=Sat
+  // Personal
+  title?: string
+  firstNameEn?: string
+  lastNameEn?: string
+  nicknameEn?: string
+  gender?: string
+  nationality?: string
+  maritalStatus?: string
+  dateOfBirth?: string  // YYYY-MM-DD
+  address?: string
+  // IDs
+  passportNumber?: string
+  socialSecurityNumber?: string
+  taxId?: string
+  fingerprintCode?: string
+  // Employment
+  hireDate?: string
+  retirementYear?: number
+  probationDays?: number
+  probationEndDate?: string
+  contractEndDate?: string
+  employmentType?: string
+  startDate?: string
+  // Bank / payroll
+  bankBranchCode?: string
+  paymentMethod?: string
+  // Free-form
+  notes?: string
+  hashtags?: string[]
 }
 
 export interface WorkDaysBulkItem {
@@ -120,11 +149,31 @@ export interface SelfUpdate {
   nickname?: string
   phone?: string
   avatarUrl?: string
+  // Personal
+  title?: string
+  firstNameEn?: string
+  lastNameEn?: string
+  nicknameEn?: string
+  gender?: string
+  nationality?: string
+  maritalStatus?: string
+  dateOfBirth?: string
+  address?: string
+  // IDs
+  nationalId?: string
+  passportNumber?: string
+  socialSecurityNumber?: string
+  taxId?: string
+  // Bank
+  bankAccount?: string
+  bankName?: string
+  bankBranchCode?: string
 }
 
 export const employeeApi = {
   list: () => api.get('/employees'),
   me: () => api.get('/employees/me'),
+  getOne: (id: string) => api.get(`/employees/${id}`),
   update: (id: string, data: EmployeeUpdate) => api.patch(`/employees/${id}`, data),
   updateMe: (data: SelfUpdate) => api.patch('/employees/me', data),
   bulkUpdateWorkDays: (items: WorkDaysBulkItem[]) =>

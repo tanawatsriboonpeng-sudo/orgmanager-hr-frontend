@@ -7,7 +7,7 @@ import {
   IconUser, IconKey, IconMail, IconBuildingCommunity,
   IconBriefcase, IconShieldLock, IconChevronRight,
   IconCrown, IconUsers, IconPhoto, IconX, IconCheck,
-  IconPhone, IconEdit
+  IconPhone, IconEdit, IconUserCircle
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 
@@ -254,6 +254,21 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+
+      {/* Full profile link */}
+      <Link
+        href="/employees/me"
+        className="card mb-5 flex items-center gap-3 hover:border-[#1D9E75]/40 transition-all group"
+      >
+        <div className="w-10 h-10 rounded-[10px] bg-[#E6F1FB] text-[#0C447C] flex items-center justify-center flex-shrink-0">
+          <IconUserCircle size={18} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-[#111110]">แก้ไขข้อมูลเต็มรูปแบบ</div>
+          <div className="text-xs text-gray-500">ที่อยู่, เพศ, สัญชาติ, บัตรประชาชน, บัญชีธนาคาร, และอื่นๆ</div>
+        </div>
+        <IconChevronRight size={16} className="text-gray-300 group-hover:text-gray-500" />
+      </Link>
 
       {/* Security Section */}
       <div className="card">

@@ -260,9 +260,18 @@ function EditModal({
             <h2 className="text-base font-semibold text-[#111110]">แก้ไขข้อมูลพนักงาน</h2>
             <p className="text-xs text-gray-500 mt-0.5">{emp.email} · {emp.employee_id}</p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-[8px] hover:bg-gray-100 text-gray-500" aria-label="ปิด">
-            <IconX size={16} />
-          </button>
+          <div className="flex items-center gap-2">
+            <a
+              href={`/employees/${emp.id}`}
+              className="text-[11px] text-[#1D9E75] hover:underline"
+              title="เปิดหน้าข้อมูลเต็มรูปแบบ"
+            >
+              ดูข้อมูลเต็ม →
+            </a>
+            <button onClick={onClose} className="p-1.5 rounded-[8px] hover:bg-gray-100 text-gray-500" aria-label="ปิด">
+              <IconX size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Avatar */}
