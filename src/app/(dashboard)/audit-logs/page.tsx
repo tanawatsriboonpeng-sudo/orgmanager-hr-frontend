@@ -1,4 +1,5 @@
 'use client'
+// Audit log viewer — owner-visible, HR-permitted. Force-redeploy trigger.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { auditApi, type AuditLog } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
