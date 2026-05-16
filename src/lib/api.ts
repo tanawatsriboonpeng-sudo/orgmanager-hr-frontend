@@ -3,7 +3,9 @@ import Cookies from 'js-cookie'
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api',
-  timeout: 15000,
+  // 60s — uploading a base64 avatar onto Render free tier (with potential
+  // cold-start) easily blows past 15s. Backend itself is fast once awake.
+  timeout: 60000,
   headers: { 'Content-Type': 'application/json' },
 })
 
