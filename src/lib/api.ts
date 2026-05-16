@@ -156,6 +156,7 @@ export interface FlexTier {
 export interface ShiftConfig {
   id: string
   name: string
+  code?: string | null
   shift_type: 'normal' | 'flexible' | string
   description?: string
   work_days: number[]
@@ -172,6 +173,7 @@ export interface ShiftConfig {
 }
 export interface ShiftConfigUpsert {
   name?: string
+  code?: string
   shiftType?: 'normal' | 'flexible'
   description?: string
   workDays?: number[]

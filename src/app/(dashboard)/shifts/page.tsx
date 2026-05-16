@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
-import { employeeApi, shiftApi, ShiftAssignment, ShiftBulkItem } from '@/lib/api'
+import { employeeApi, shiftApi, shiftConfigApi, ShiftAssignment, ShiftBulkItem, ShiftConfig } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import dayjs from 'dayjs'
 import {
@@ -22,12 +22,26 @@ interface Employee {
   is_active: boolean
 }
 
-type ShiftValue = 'normal' | 'flexible' | 'dayoff' | 'default'
+// A cell value is either the special 'default' (clear override),
+// 'dayoff' (explicit day off), or a shift_configs.code such as "WC001".
+type ShiftValue = string
 
-const SHIFT_META: Record<string, { label: string; short: string; color: string; bg: string }> = {
+const DAYOFF_META = { label: 'วันหยุด', short: '—', color: '#791F1F', bg: '#FCEBEB' }
+// Legacy fallback styling for old enum values still in the DB
+const LEGACY_META: Record<string, { label: string; short: string; color: string; bg: string }> = {
   normal:   { label: 'กะปกติ', short: 'ป', color: '#0C447C', bg: '#E6F1FB' },
   flexible: { label: 'ยืดหยุ่น', short: 'ย', color: '#633806', bg: '#FAEEDA' },
-  dayoff:   { label: 'วันหยุด', short: '—', color: '#791F1F', bg: '#FCEBEB' },
+  dayoff:   DAYOFF_META,
+}
+
+function configMeta(code: string, configs: ShiftConfig[]) {
+  if (code === 'dayoff') return DAYOFF_META
+  if (LEGACY_META[code]) return LEGACY_META[code]
+  // It's a config code → look up by code or fallback to type-based color
+  const cfg = configs.find(c => c.code === code)
+  if (!cfg) return { label: code, short: code.slice(0, 4), color: '#534AB7', bg: '#EEEDFE' }
+  if (cfg.shift_type === 'flexible') return { label: cfg.code || cfg.name, short: cfg.code || cfg.name.slice(0,4), color: '#633806', bg: '#FAEEDA' }
+  return { label: cfg.code || cfg.name, short: cfg.code || cfg.name.slice(0,4), color: '#0C447C', bg: '#E6F1FB' }
 }
 
 const DAY_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
@@ -111,6 +125,7 @@ function TabButton({
 
 function ScheduleTab() {
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [configs, setConfigs] = useState<ShiftConfig[]>([])
   const [assignments, setAssignments] = useState<ShiftAssignment[]>([])
   const [pending, setPending] = useState<Record<string, ShiftValue>>({})
   const [anchor, setAnchor] = useState(dayjs())
@@ -130,15 +145,19 @@ function ScheduleTab() {
   const load = async () => {
     setLoading(true)
     try {
-      const [eRes, sRes] = await Promise.allSettled([
+      const [eRes, sRes, cRes] = await Promise.allSettled([
         employeeApi.list(),
         shiftApi.list(startDate, endDate),
+        shiftConfigApi.list(),
       ])
       if (eRes.status === 'fulfilled') {
         const all: Employee[] = eRes.value.data.data || []
         setEmployees(all.filter(e => e.role !== 'owner' && e.is_active !== false))
       }
       if (sRes.status === 'fulfilled') setAssignments(sRes.value.data.data || [])
+      if (cRes.status === 'fulfilled') {
+        setConfigs((cRes.value.data.data || []).filter((c: ShiftConfig) => c.is_active !== false))
+      }
       setPending({})
     } finally { setLoading(false) }
   }
@@ -212,21 +231,31 @@ function ScheduleTab() {
       {/* Legend */}
       <div className="flex items-center gap-3 mb-3 text-xs text-gray-500 flex-wrap">
         <span className="text-gray-400">คำอธิบาย:</span>
-        {Object.entries(SHIFT_META).map(([k, v]) => (
-          <span key={k} className="inline-flex items-center gap-1.5">
-            <span
-              className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-medium"
-              style={{ background: v.bg, color: v.color }}
-            >
-              {v.short}
+        {configs.length === 0 && (
+          <span className="text-amber-600 inline-flex items-center gap-1.5">
+            ⚠ ยังไม่มีกะใน &quot;ตั้งค่ากะ&quot; — สร้างกะก่อนเพื่อใช้งาน
+          </span>
+        )}
+        {configs.map(c => {
+          const m = configMeta(c.code || '', configs)
+          return (
+            <span key={c.id} className="inline-flex items-center gap-1.5">
+              <span
+                className="inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded text-[10px] font-medium"
+                style={{ background: m.bg, color: m.color }}
+              >
+                {c.code || c.name.slice(0,4)}
+              </span>
+              <span className="text-gray-500">{c.name}</span>
             </span>
-            {v.label}
-          </span>
-        ))}
+          )
+        })}
         <span className="inline-flex items-center gap-1.5">
-          <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-medium bg-gray-100 text-gray-400">
-            ·
-          </span>
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-medium" style={{ background: DAYOFF_META.bg, color: DAYOFF_META.color }}>—</span>
+          วันหยุด
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-medium bg-gray-100 text-gray-400">·</span>
           ใช้ค่าเริ่มต้น
         </span>
       </div>
@@ -269,7 +298,7 @@ function ScheduleTab() {
                     {emp.nickname && <span className="text-gray-400 font-normal ml-1">({emp.nickname})</span>}
                   </div>
                   <div className="text-[11px] text-gray-400">
-                    {emp.department_name || '—'} · ค่าเริ่มต้น: {SHIFT_META[emp.shift_type || 'normal']?.label || emp.shift_type}
+                    {emp.department_name || '—'} · ค่าเริ่มต้น: {emp.shift_type || 'normal'}
                   </div>
                 </td>
                 {week.map((d, i) => {
@@ -277,6 +306,7 @@ function ScheduleTab() {
                   const value = cellValue(emp.id, dateStr)
                   const isPending = pending[`${emp.id}_${dateStr}`] !== undefined
                   const isWeekend = d.day() === 0 || d.day() === 6
+                  const m = value !== 'default' ? configMeta(value, configs) : null
                   return (
                     <td key={i} className={clsx('px-2 py-2 text-center align-middle',
                       isWeekend ? 'bg-gray-50/30' : '')}>
@@ -288,14 +318,14 @@ function ScheduleTab() {
                           isPending ? 'border-[#1D9E75] ring-1 ring-[#1D9E75]/30' : 'border-black/[0.08]',
                           value === 'default' ? 'bg-gray-50 text-gray-500' : 'text-[#111110]'
                         )}
-                        style={value !== 'default' ? {
-                          background: SHIFT_META[value]?.bg,
-                          color: SHIFT_META[value]?.color,
-                        } : undefined}
+                        style={m ? { background: m.bg, color: m.color } : undefined}
                       >
                         <option value="default">· ค่าเริ่มต้น</option>
-                        <option value="normal">ป กะปกติ</option>
-                        <option value="flexible">ย ยืดหยุ่น</option>
+                        {configs.map(c => (
+                          <option key={c.id} value={c.code || ''} disabled={!c.code}>
+                            {c.code || c.name} — {c.name}
+                          </option>
+                        ))}
                         <option value="dayoff">— วันหยุด</option>
                       </select>
                     </td>

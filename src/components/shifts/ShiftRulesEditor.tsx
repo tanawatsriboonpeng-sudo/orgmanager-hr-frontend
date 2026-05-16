@@ -60,7 +60,13 @@ function NormalRulesCard({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <div>
+          <label className="label">โค้ด <span className="text-gray-400">(สำหรับเลือกในตาราง)</span></label>
+          <input className="input font-mono" placeholder="WC001"
+            value={config.code || ''}
+            onChange={e => onChange({ code: e.target.value })} />
+        </div>
         <div>
           <label className="label">ชื่อกะ</label>
           <input className="input" value={config.name}
@@ -188,7 +194,13 @@ function FlexRulesCard({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <div>
+          <label className="label">โค้ด <span className="text-gray-400">(สำหรับเลือกในตาราง)</span></label>
+          <input className="input font-mono" placeholder="WC002"
+            value={config.code || ''}
+            onChange={e => onChange({ code: e.target.value })} />
+        </div>
         <div>
           <label className="label">ชื่อกะ</label>
           <input className="input" value={config.name}
@@ -347,6 +359,7 @@ export default function ShiftRulesEditor({ isOwner }: { isOwner: boolean }) {
     try {
       const payload: ShiftConfigUpsert = {
         name: cfg.name,
+        code: cfg.code || undefined,
         description: cfg.description,
         workDays: cfg.work_days,
         checkinStart: timeToHHMM(cfg.checkin_start) || undefined,
