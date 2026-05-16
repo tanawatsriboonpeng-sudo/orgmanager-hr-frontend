@@ -26,6 +26,49 @@ const THAI_MONTHS = [
 
 type LocStatus = 'idle' | 'getting' | 'ok' | 'denied' | 'unsupported' | 'far'
 
+// "HH:MM[:SS]" → minutes since midnight, tolerant of PG TIME serialization.
+function timeToMin(t?: string | null): number {
+  if (!t) return 0
+  const [hh, mm] = String(t).split(':')
+  return (parseInt(hh, 10) || 0) * 60 + (parseInt(mm, 10) || 0)
+}
+
+// Live hint shown above the check-in buttons:
+// what bucket the user falls in if they tap "เช็คอิน" right now, and
+// how many minutes until the next bucket. Returns null when there's
+// nothing helpful to display (already checked in, no shift, day off).
+function shiftHint(now: any, shift: any | null, alreadyCheckedIn: boolean): { text: string; color: string } | null {
+  if (!shift || shift.isDayOff || alreadyCheckedIn) return null
+  const nowMin = now.hour() * 60 + now.minute() + now.second() / 60
+
+  if (shift.shift_type === 'flexible' && Array.isArray(shift.flex_tiers) && shift.flex_tiers.length) {
+    const sorted = [...shift.flex_tiers].sort((a: any, b: any) => timeToMin(a.checkin_until) - timeToMin(b.checkin_until))
+    for (const tier of sorted) {
+      if (nowMin <= timeToMin(tier.checkin_until)) {
+        return { text: `ถ้าเช็คอินตอนนี้ → ออกงาน ${tier.checkout}`, color: '#1D9E75' }
+      }
+    }
+    return { text: 'เกินเวลาเช็คอินสุดท้ายแล้ว — จะนับเป็นสาย/ขาด', color: '#E24B4A' }
+  }
+
+  const workStart = timeToMin(shift.work_start)
+  const lateWarn  = shift.late_warning_minutes ?? 1
+  const lateTh    = shift.late_threshold_minutes ?? 10
+  const absentTh  = shift.absent_threshold_minutes ?? 20
+  const diff = nowMin - workStart
+
+  if (diff < lateWarn) {
+    return { text: `ตรงเวลา · เหลือ ${Math.ceil(lateWarn - diff)} นาทีก่อนเกือบสาย`, color: '#1D9E75' }
+  }
+  if (diff < lateTh) {
+    return { text: `เกือบสาย · เหลือ ${Math.ceil(lateTh - diff)} นาทีก่อน "สาย"`, color: '#BA7517' }
+  }
+  if (diff < absentTh) {
+    return { text: `สาย · เหลือ ${Math.ceil(absentTh - diff)} นาทีก่อน "ขาดงาน"`, color: '#E24B4A' }
+  }
+  return { text: 'ขาดงาน — เกินเวลาเช็คอินที่กำหนด', color: '#E24B4A' }
+}
+
 export default function AttendancePage() {
   const { user } = useAuthStore()
   const role = user?.role
@@ -34,6 +77,10 @@ export default function AttendancePage() {
 
   // Today / check-in state (non-owner)
   const [todayLog, setTodayLog] = useState<any>(null)
+  // Shift config for today (work_start, late thresholds, flex_tiers).
+  // Provided by /attendance/today so we can show expected hours + live
+  // status hint without a second round-trip to /shift-configs.
+  const [shiftInfo, setShiftInfo] = useState<any | null>(null)
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [locStatus, setLocStatus] = useState<LocStatus>('idle')
   const [distance, setDistance] = useState<number | null>(null)
@@ -74,6 +121,7 @@ export default function AttendancePage() {
     try {
       const r = await attendanceApi.today()
       setTodayLog(r.data.data)
+      setShiftInfo(r.data.shift || null)
     } catch {}
   }, [isOwner])
 
@@ -211,6 +259,42 @@ export default function AttendancePage() {
                 <IconClockCheck size={14} className="text-gray-400" />
                 เช็คอิน / เช็คเอาท์
               </h2>
+
+              {/* Shift-aware status: shows the expected work start time,
+                  the shift name/code if HR assigned one, and a live
+                  countdown to the next bucket. Re-rendered every second
+                  because `now` ticks at 1Hz. */}
+              {shiftInfo && !shiftInfo.isDayOff && (
+                <div className="mb-3 p-3 rounded-[10px] border border-black/[0.05] bg-gray-50/60">
+                  <div className="flex items-center justify-between text-[12px]">
+                    <span className="text-gray-600">
+                      เข้างาน <span className="font-medium tabular-nums text-[#111110]">{(shiftInfo.work_start || '').slice(0, 5)}</span>
+                      {shiftInfo.work_end && (
+                        <> – <span className="tabular-nums">{shiftInfo.work_end.slice(0, 5)}</span></>
+                      )}
+                    </span>
+                    {shiftInfo.code && (
+                      <span className="text-[11px] text-gray-500">
+                        กะ <span className="font-medium text-[#111110]">{shiftInfo.code}</span>
+                        {shiftInfo.name && <span className="text-gray-400"> · {shiftInfo.name}</span>}
+                      </span>
+                    )}
+                  </div>
+                  {(() => {
+                    const hint = shiftHint(now, shiftInfo, !!todayLog?.check_in_at)
+                    return hint ? (
+                      <div className="mt-1.5 text-[11px] font-medium" style={{ color: hint.color }}>
+                        {hint.text}
+                      </div>
+                    ) : null
+                  })()}
+                </div>
+              )}
+              {shiftInfo?.isDayOff && (
+                <div className="mb-3 p-3 rounded-[10px] border border-amber-200 bg-amber-50/60 text-[12px] text-amber-800">
+                  วันนี้เป็น <span className="font-medium">วันหยุด</span>ของคุณ — ไม่ต้องลงเวลา
+                </div>
+              )}
 
               {todayLog ? (
                 <div className="p-3 bg-[#E1F5EE]/60 rounded-[10px] mb-4 text-sm">
