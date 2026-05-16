@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { otApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
-  IconPlus, IconCheck, IconX, IconClockPlus, IconCrown,
+  IconPlus, IconCheck, IconX, IconClockPlus,
   IconUserCheck, IconUserX, IconTrash, IconAlertCircle,
   IconClock,
 } from '@tabler/icons-react'
@@ -220,15 +220,6 @@ export default function OTPage() {
           {toast.ok ? <IconCheck size={14} /> : <IconAlertCircle size={14} />}
           <span className="flex-1">{toast.text}</span>
           <button onClick={() => setToast(null)} aria-label="ปิด"><IconX size={13} /></button>
-        </div>
-      )}
-
-      {isOwner && (
-        <div className="card text-center py-6 mb-5"
-          style={{ background: 'linear-gradient(135deg, #EEEDFE 0%, #FFFFFF 60%)' }}>
-          <IconCrown size={26} className="mx-auto text-[#534AB7] mb-1.5" />
-          <p className="text-sm text-[#111110] font-medium">เจ้าของไม่ต้องขอ OT</p>
-          <p className="text-xs text-gray-500 mt-1">รายการ OT รออนุมัติแสดงด้านล่าง</p>
         </div>
       )}
 

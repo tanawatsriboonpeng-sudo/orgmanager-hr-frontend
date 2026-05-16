@@ -1,10 +1,10 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
-import { leaveApi } from '@/lib/api'
+import { leaveApi, type LeaveQuotaRow } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
   IconPlus, IconCheck, IconX, IconCalendarOff,
-  IconUserCheck, IconUserX, IconTrash, IconAlertCircle,
+  IconUserCheck, IconUserX, IconTrash, IconAlertCircle, IconUsers,
 } from '@tabler/icons-react'
 import dayjs from 'dayjs'
 import clsx from 'clsx'
@@ -48,6 +48,8 @@ export default function LeavePage() {
   const [quota, setQuota] = useState<any[]>([])
   const [history, setHistory] = useState<any[]>([])
   const [pending, setPending] = useState<any[]>([])
+  const [teamQuotas, setTeamQuotas] = useState<LeaveQuotaRow[]>([])
+  const [teamYear, setTeamYear] = useState<number>(dayjs().year())
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
 
   const [form, setForm] = useState({ leaveTypeId: '', startDate: '', endDate: '', reason: '' })
@@ -82,7 +84,17 @@ export default function LeavePage() {
     }
   }
 
+  // Team-quota overview is HR/owner-only and refetches when the year
+  // selector changes; kept separate from load() so changing year doesn't
+  // re-pull the personal + pending bundle.
+  const loadTeamQuotas = async (year: number) => {
+    if (!canSeePending) return
+    const r = await leaveApi.allQuotas(year).catch(() => null)
+    if (r) setTeamQuotas(r.data.data || [])
+  }
+
   useEffect(() => { load() }, [])
+  useEffect(() => { loadTeamQuotas(teamYear) /* eslint-disable-next-line */ }, [teamYear, canSeePending])
 
   // Auto-dismiss success toasts; errors persist until next action.
   useEffect(() => {
@@ -180,6 +192,28 @@ export default function LeavePage() {
     for (const h of history) c[h.status as StatusFilter] = (c[h.status as StatusFilter] || 0) + 1
     return c
   }, [history])
+
+  // Pivot the flat (employee × leave_type) response into a table layout:
+  // columns = union of leave-type names; rows = one per employee, with
+  // a cells map keyed by leave-type name. Column order is alphabetical
+  // (Thai locale) so a leave_type that appears for some employees but
+  // not others still gets a stable column slot.
+  const { teamColumns, teamRows } = useMemo(() => {
+    const cols = new Set<string>()
+    const byEmp = new Map<string, { emp: LeaveQuotaRow; cells: Map<string, LeaveQuotaRow> }>()
+    for (const r of teamQuotas) {
+      const tname = r.leave_type_name || ''
+      if (tname) cols.add(tname)
+      if (!byEmp.has(r.employee_id)) byEmp.set(r.employee_id, { emp: r, cells: new Map() })
+      if (tname) byEmp.get(r.employee_id)!.cells.set(tname, r)
+    }
+    const columns = Array.from(cols).sort((a, b) => a.localeCompare(b, 'th'))
+    const rows = Array.from(byEmp.values()).sort((a, b) =>
+      `${a.emp.first_name || ''} ${a.emp.last_name || ''}`
+        .localeCompare(`${b.emp.first_name || ''} ${b.emp.last_name || ''}`, 'th')
+    )
+    return { teamColumns: columns, teamRows: rows }
+  }, [teamQuotas])
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -513,6 +547,106 @@ export default function LeavePage() {
         </div>
         )}
       </div>
+
+      {/* Team-quota overview (HR/owner). Placed outside the main grid so
+          it stretches to the page width and the table is comfortably
+          readable when there are several leave-type columns. */}
+      {canSeePending && (
+        <div className="card mt-5">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <IconUsers size={14} className="text-gray-400" />
+              โควต้าวันลาของทีม
+              <span className="text-[11px] font-normal text-gray-400">({teamRows.length} คน)</span>
+            </h2>
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] text-gray-500">ปี</label>
+              <select
+                className="input text-xs py-1 px-2"
+                value={teamYear}
+                onChange={e => setTeamYear(parseInt(e.target.value, 10))}
+              >
+                {Array.from({ length: 5 }).map((_, i) => {
+                  const y = dayjs().year() - i
+                  return <option key={y} value={y}>{y + 543}</option>
+                })}
+              </select>
+            </div>
+          </div>
+
+          {teamRows.length === 0 ? (
+            <p className="text-xs text-gray-400 py-8 text-center">
+              ยังไม่มีข้อมูลโควต้าในปี {teamYear + 543}
+              <span className="block text-[11px] text-gray-400 mt-1">
+                โควต้าจะถูกสร้างเมื่อพนักงานเปิดหน้าการลาครั้งแรกในปีนั้น
+              </span>
+            </p>
+          ) : (
+            <div className="overflow-x-auto -mx-4 px-4">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-[11px] text-gray-500 border-b border-black/[0.06]">
+                    <th className="py-2 pr-3 font-medium">พนักงาน</th>
+                    <th className="py-2 pr-3 font-medium hidden sm:table-cell">แผนก</th>
+                    {teamColumns.map(c => (
+                      <th key={c} className="py-2 pr-3 font-medium text-right whitespace-nowrap">{c}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-black/[0.04]">
+                  {teamRows.map(({ emp, cells }) => (
+                    <tr key={emp.employee_id} className="hover:bg-gray-50/60">
+                      <td className="py-2 pr-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <EmployeeAvatar person={emp} size={26} />
+                          <div className="min-w-0">
+                            <div className="text-[13px] text-[#111110] truncate">
+                              {emp.first_name} {emp.last_name}
+                              {emp.nickname && <span className="text-gray-400 font-normal ml-1">({emp.nickname})</span>}
+                            </div>
+                            {emp.position && (
+                              <div className="text-[10px] text-gray-400 truncate">{emp.position}</div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-2 pr-3 text-[12px] text-gray-700 hidden sm:table-cell">
+                        {emp.department_name || <span className="text-gray-300">—</span>}
+                      </td>
+                      {teamColumns.map(c => {
+                        const cell = cells.get(c)
+                        if (!cell) {
+                          return <td key={c} className="py-2 pr-3 text-right text-[12px] text-gray-300">—</td>
+                        }
+                        const total = Number(cell.total_days) || 0
+                        const used = Number(cell.used_days) || 0
+                        const remaining = Number(cell.remaining_days)
+                        const pct = total > 0 ? used / total : 0
+                        const color =
+                          remaining <= 0 ? '#E24B4A'
+                          : pct >= 0.8   ? '#BA7517'
+                          : '#1D9E75'
+                        return (
+                          <td key={c} className="py-2 pr-3 text-right">
+                            <div className="inline-flex flex-col items-end leading-tight">
+                              <span className="tabular-nums text-[13px] font-medium" style={{ color }}>
+                                {used}/{total}
+                              </span>
+                              <span className="text-[10px] text-gray-400">
+                                เหลือ {remaining}
+                              </span>
+                            </div>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

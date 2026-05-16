@@ -68,9 +68,31 @@ export const attendanceApi = {
 }
 
 // Leave APIs
+export interface LeaveQuotaRow {
+  id: string
+  employee_id: string
+  leave_type_id: string
+  year: number
+  total_days: number
+  used_days: number
+  remaining_days: number
+  // joined
+  first_name?: string
+  last_name?: string
+  nickname?: string | null
+  avatar_url?: string | null
+  emp_code?: string
+  position?: string | null
+  department_name?: string | null
+  leave_type_name?: string
+  leave_type_code?: string
+}
+
 export const leaveApi = {
   types: () => api.get('/leave/types'),
   myQuota: (year?: number) => api.get('/leave/my-quota', { params: { year } }),
+  // HR/owner overview — one row per (employee × leave_type) for a year.
+  allQuotas: (year?: number) => api.get('/leave/all-quotas', { params: { year } }),
   myHistory: () => api.get('/leave/my-history'),
   create: (data: { leaveTypeId: string; startDate: string; endDate: string; reason: string }) =>
     api.post('/leave/request', data),

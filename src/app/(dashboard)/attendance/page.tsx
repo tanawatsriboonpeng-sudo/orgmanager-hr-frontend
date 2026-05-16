@@ -4,7 +4,7 @@ import { attendanceApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
   IconMapPin, IconClockCheck, IconClockOff, IconAlertTriangle,
-  IconCheck, IconCrown, IconChevronDown, IconChevronUp,
+  IconCheck, IconChevronDown, IconChevronUp,
   IconRefresh, IconClock, IconUsers, IconCalendar,
 } from '@tabler/icons-react'
 import dayjs from 'dayjs'
