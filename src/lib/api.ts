@@ -130,13 +130,17 @@ export interface ShiftAssignment {
   id: string
   employee_id: string
   date: string
-  shift_type: 'normal' | 'flexible' | 'dayoff'
+  // shift_configs.code such as "WC001", or the legacy literals
+  // 'normal'/'flexible'/'dayoff' (no CHECK constraint anymore).
+  shift_type: string
   notes?: string
 }
 export interface ShiftBulkItem {
   employeeId: string
   date: string
-  shiftType: 'normal' | 'flexible' | 'dayoff' | 'default'
+  // Either a shift_configs.code (e.g. "WC001"), the legacy literals
+  // 'normal'/'flexible'/'dayoff', or 'default' to clear the override.
+  shiftType: string
   notes?: string
 }
 export const shiftApi = {
