@@ -4,7 +4,7 @@ import { leaveApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
   IconPlus, IconCheck, IconX, IconCalendarOff,
-  IconUserCheck, IconUserX, IconTrash, IconAlertCircle,
+  IconUserCheck, IconUserX, IconTrash, IconAlertCircle, IconCrown,
 } from '@tabler/icons-react'
 import dayjs from 'dayjs'
 import clsx from 'clsx'
@@ -39,6 +39,9 @@ function countWorkingDays(startISO: string, endISO: string): number {
 export default function LeavePage() {
   const { user } = useAuthStore()
   const role = user?.role
+  // Owner has no quota and no one to approve them — same rule as
+  // /attendance and /ot. Page becomes approval-only for owner.
+  const isOwner = role === 'owner'
   const canSeePending = role === 'hr' || role === 'owner'
 
   const [types, setTypes] = useState<any[]>([])
@@ -62,12 +65,17 @@ export default function LeavePage() {
   const [actingId, setActingId] = useState<string | null>(null)
 
   const load = async () => {
-    const [typesRes, quotaRes, histRes] = await Promise.allSettled([
-      leaveApi.types(), leaveApi.myQuota(), leaveApi.myHistory(),
-    ])
-    if (typesRes.status === 'fulfilled') setTypes(typesRes.value.data.data || [])
-    if (quotaRes.status === 'fulfilled') setQuota(quotaRes.value.data.data || [])
-    if (histRes.status === 'fulfilled') setHistory(histRes.value.data.data || [])
+    // Owner skips the personal calls (types/quota/history). They have no
+    // quota row and the type-picker is only useful for filing requests,
+    // which they can't do.
+    if (!isOwner) {
+      const [typesRes, quotaRes, histRes] = await Promise.allSettled([
+        leaveApi.types(), leaveApi.myQuota(), leaveApi.myHistory(),
+      ])
+      if (typesRes.status === 'fulfilled') setTypes(typesRes.value.data.data || [])
+      if (quotaRes.status === 'fulfilled') setQuota(quotaRes.value.data.data || [])
+      if (histRes.status === 'fulfilled') setHistory(histRes.value.data.data || [])
+    }
     if (canSeePending) {
       const pendRes = await leaveApi.pending().catch(() => null)
       if (pendRes) setPending(pendRes.data.data || [])
@@ -178,14 +186,18 @@ export default function LeavePage() {
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-semibold text-[#111110]">การลา</h1>
-          <p className="text-sm text-gray-500 mt-0.5">จัดการคำขอลาและโควตา</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {isOwner ? 'อนุมัติคำขอลาของพนักงาน' : 'จัดการคำขอลาและโควตา'}
+          </p>
         </div>
-        <button
-          onClick={() => { setShowForm(s => !s); setFormMsg('') }}
-          className="btn btn-primary text-sm"
-        >
-          <IconPlus size={15} /> {showForm ? 'ปิดฟอร์ม' : 'ยื่นคำขอลา'}
-        </button>
+        {!isOwner && (
+          <button
+            onClick={() => { setShowForm(s => !s); setFormMsg('') }}
+            className="btn btn-primary text-sm"
+          >
+            <IconPlus size={15} /> {showForm ? 'ปิดฟอร์ม' : 'ยื่นคำขอลา'}
+          </button>
+        )}
       </div>
 
       {/* Page-level toast */}
@@ -200,8 +212,17 @@ export default function LeavePage() {
         </div>
       )}
 
+      {isOwner && (
+        <div className="card text-center py-6 mb-5"
+          style={{ background: 'linear-gradient(135deg, #EEEDFE 0%, #FFFFFF 60%)' }}>
+          <IconCrown size={26} className="mx-auto text-[#534AB7] mb-1.5" />
+          <p className="text-sm text-[#111110] font-medium">เจ้าของไม่ต้องยื่นลา</p>
+          <p className="text-xs text-gray-500 mt-1">รายการลารออนุมัติแสดงด้านล่าง</p>
+        </div>
+      )}
+
       {/* Form */}
-      {showForm && (
+      {showForm && !isOwner && (
         <div className="card mb-5">
           <h2 className="text-sm font-semibold mb-4">ยื่นคำขอลาใหม่</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -290,7 +311,8 @@ export default function LeavePage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Quota */}
+        {/* Quota — owner has no quota row, hide entirely */}
+        {!isOwner && (
         <div className="card">
           <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
             <IconCalendarOff size={14} className="text-gray-400" />
@@ -316,10 +338,12 @@ export default function LeavePage() {
                 )
               })}
         </div>
+        )}
 
-        {/* Pending (HR/owner) */}
+        {/* Pending (HR/owner). Spans full row width when owner is the
+            only viewer (quota + history both hidden). */}
         {canSeePending && (
-          <div className="card lg:col-span-2">
+          <div className={clsx('card', isOwner ? 'lg:col-span-3' : 'lg:col-span-2')}>
             <h2 className="text-sm font-semibold mb-3 flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <IconUserCheck size={14} className="text-gray-400" />
@@ -402,7 +426,8 @@ export default function LeavePage() {
           </div>
         )}
 
-        {/* History */}
+        {/* History — owner doesn't have personal leave history */}
+        {!isOwner && (
         <div className={clsx('card', !canSeePending && 'lg:col-span-2')}>
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 className="text-sm font-semibold flex items-center gap-2">
@@ -495,6 +520,7 @@ export default function LeavePage() {
                 })}
               </div>}
         </div>
+        )}
       </div>
     </div>
   )
