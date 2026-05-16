@@ -20,10 +20,6 @@ const ROLES = [
 ]
 
 const DEPARTMENTS = ['IT', 'HR', 'Finance', 'Operations', 'Marketing', 'ทั่วไป']
-const SHIFTS = [
-  { value: 'normal', label: 'กะปกติ (09:00-17:00)' },
-  { value: 'flexible', label: 'Flexible Time' },
-]
 
 interface Employee {
   id: string
@@ -76,7 +72,7 @@ export default function EmployeesPage() {
   const [form, setForm] = useState({
     firstName: '', lastName: '', email: '',
     employeeId: '', position: '', department: 'IT',
-    role: 'employee', shiftType: 'normal',
+    role: 'employee',
     baseSalary: '', password: '', confirmPassword: '',
   })
 
@@ -166,7 +162,7 @@ export default function EmployeesPage() {
 
   const resetForm = () => {
     setForm({ firstName: '', lastName: '', email: '', employeeId: '',
-      position: '', department: 'IT', role: 'employee', shiftType: 'normal',
+      position: '', department: 'IT', role: 'employee',
       baseSalary: '', password: '', confirmPassword: '' })
     setEditEmp(null)
     setShowForm(false)
@@ -198,7 +194,7 @@ export default function EmployeesPage() {
         await api.patch(`/employees/${editEmp.id}`, {
           firstName: form.firstName, lastName: form.lastName,
           position: form.position, department: form.department,
-          shiftType: form.shiftType, baseSalary: parseFloat(form.baseSalary) || 0,
+          baseSalary: parseFloat(form.baseSalary) || 0,
           role: form.role,
         })
         setMsg({ text: 'อัปเดตข้อมูลพนักงานแล้ว', ok: true })
@@ -207,7 +203,7 @@ export default function EmployeesPage() {
           firstName: form.firstName, lastName: form.lastName,
           email: form.email, employeeId: form.employeeId,
           position: form.position, department: form.department,
-          role: form.role, shiftType: form.shiftType,
+          role: form.role,
           baseSalary: parseFloat(form.baseSalary) || 0,
           password: form.password,
         })
@@ -226,7 +222,7 @@ export default function EmployeesPage() {
       firstName: emp.first_name, lastName: emp.last_name,
       email: emp.email, employeeId: emp.employee_id,
       position: emp.position || '', department: emp.department_name || 'IT',
-      role: emp.role, shiftType: emp.shift_type || 'normal',
+      role: emp.role,
       baseSalary: String(emp.base_salary || ''), password: '', confirmPassword: '',
     })
     setShowForm(true)
@@ -294,9 +290,20 @@ export default function EmployeesPage() {
       {/* Form */}
       {showForm && (
         <div className="card mb-6">
-          <h2 className="text-sm font-semibold mb-4">
-            {editEmp ? `แก้ไขข้อมูล — ${editEmp.first_name} ${editEmp.last_name}` : 'เพิ่มพนักงานใหม่'}
-          </h2>
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h2 className="text-sm font-semibold">
+              {editEmp ? `แก้ไขข้อมูล — ${editEmp.first_name} ${editEmp.last_name}` : 'เพิ่มพนักงานใหม่'}
+            </h2>
+            {/* In edit mode, surface email + employee_id as read-only chips
+                instead of disabled inputs (they can't change, so they don't
+                belong in the editable grid). */}
+            {editEmp && (
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span className="px-2 py-1 rounded-md bg-gray-100 font-mono text-gray-700">{editEmp.employee_id}</span>
+                <span className="px-2 py-1 rounded-md bg-gray-100 text-gray-700">{editEmp.email}</span>
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-3 mb-3">
             <div>
               <label className="label">ชื่อ *</label>
@@ -310,18 +317,24 @@ export default function EmployeesPage() {
                 onChange={e => setForm(p => ({ ...p, lastName: e.target.value }))}
                 placeholder="นามสกุล" />
             </div>
-            <div>
-              <label className="label">อีเมล *</label>
-              <input className="input" type="email" value={form.email}
-                onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
-                placeholder="email@company.co.th" disabled={!!editEmp} />
-            </div>
-            <div>
-              <label className="label">รหัสพนักงาน *</label>
-              <input className="input" value={form.employeeId}
-                onChange={e => setForm(p => ({ ...p, employeeId: e.target.value }))}
-                placeholder="EMP-001" disabled={!!editEmp} />
-            </div>
+            {/* Email + employee_id are immutable for existing employees,
+                so we only show them as inputs when creating new ones. */}
+            {!editEmp && (
+              <>
+                <div>
+                  <label className="label">อีเมล *</label>
+                  <input className="input" type="email" value={form.email}
+                    onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+                    placeholder="email@company.co.th" />
+                </div>
+                <div>
+                  <label className="label">รหัสพนักงาน *</label>
+                  <input className="input" value={form.employeeId}
+                    onChange={e => setForm(p => ({ ...p, employeeId: e.target.value }))}
+                    placeholder="EMP-001" />
+                </div>
+              </>
+            )}
             <div>
               <label className="label">ตำแหน่ง</label>
               <input className="input" value={form.position}
@@ -344,19 +357,21 @@ export default function EmployeesPage() {
               </select>
             </div>
             <div>
-              <label className="label">กะทำงาน</label>
-              <select className="input" value={form.shiftType}
-                onChange={e => setForm(p => ({ ...p, shiftType: e.target.value }))}>
-                {SHIFTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
-            </div>
-            <div>
               <label className="label">เงินเดือนฐาน (บาท)</label>
               <input className="input" type="number" value={form.baseSalary}
                 onChange={e => setForm(p => ({ ...p, baseSalary: e.target.value }))}
                 placeholder="0" />
             </div>
           </div>
+
+          {editEmp && (
+            <p className="text-[11px] text-gray-400 -mt-1 mb-3">
+              ต้องการแก้ที่อยู่ / บัญชีธนาคาร / ข้อมูลส่วนตัวเพิ่ม → ใช้
+              <Link href={`/employees/${editEmp.id}`} className="text-[#1D9E75] hover:underline mx-1">หน้าข้อมูลเต็ม</Link>
+              จัดกะ → ใช้
+              <Link href="/shifts" className="text-[#1D9E75] hover:underline ml-1">หน้าจัดกะ</Link>
+            </p>
+          )}
 
           {!editEmp && (
             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-black/[0.06]">
