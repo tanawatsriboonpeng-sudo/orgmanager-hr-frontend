@@ -85,9 +85,44 @@ export const otApi = {
 }
 
 // Employee APIs
+export interface EmployeeUpdate {
+  firstName?: string
+  lastName?: string
+  nickname?: string
+  phone?: string
+  position?: string
+  department?: string
+  shiftType?: string
+  baseSalary?: number
+  role?: 'owner' | 'hr' | 'employee'
+  managerId?: string | null
+  avatarUrl?: string
+  bankAccount?: string
+  bankName?: string
+  nationalId?: string
+}
+
+export interface SelfUpdate {
+  nickname?: string
+  phone?: string
+  avatarUrl?: string
+}
+
 export const employeeApi = {
   list: () => api.get('/employees'),
   me: () => api.get('/employees/me'),
+  update: (id: string, data: EmployeeUpdate) => api.patch(`/employees/${id}`, data),
+  updateMe: (data: SelfUpdate) => api.patch('/employees/me', data),
+}
+
+// Department APIs
+export const departmentApi = {
+  list: () => api.get('/departments'),
+  create: (data: { name: string; description?: string; managerId?: string }) =>
+    api.post('/departments', data),
+  update: (id: string, data: { name?: string; description?: string; managerId?: string | null }) =>
+    api.patch(`/departments/${id}`, data),
+  delete: (id: string) => api.delete(`/departments/${id}`),
 }
 
 // Holiday APIs
