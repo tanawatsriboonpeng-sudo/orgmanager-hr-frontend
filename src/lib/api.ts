@@ -82,9 +82,11 @@ export const leaveApi = {
 export const otApi = {
   create: (data: { date: string; startTime: string; endTime: string; reason: string }) =>
     api.post('/ot/request', data),
+  myHistory: () => api.get('/ot/my-history'),
+  cancel: (id: string) => api.post(`/ot/${id}/cancel`),
   pending: () => api.get('/ot/pending'),
-  approve: (id: string, action: string) =>
-    api.patch(`/ot/${id}/approve`, { action }),
+  approve: (id: string, action: 'approved' | 'rejected', rejectedReason?: string) =>
+    api.patch(`/ot/${id}/approve`, { action, rejectedReason }),
 }
 
 // Employee APIs
