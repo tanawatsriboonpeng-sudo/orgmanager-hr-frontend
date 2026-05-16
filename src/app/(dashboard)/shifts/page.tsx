@@ -1,10 +1,9 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
-import { employeeApi, shiftApi, shiftConfigApi, ShiftAssignment, ShiftBulkItem, ShiftConfig } from '@/lib/api'
+import { employeeApi, shiftConfigApi, ShiftConfig, WeeklyShiftsBulkItem, WeeklyShifts } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
-import dayjs from 'dayjs'
 import {
-  IconCalendarTime, IconChevronLeft, IconChevronRight,
+  IconCalendarTime,
   IconCheck, IconX, IconDeviceFloppy, IconRefresh,
   IconSettings, IconCalendarStats, IconCalendarOff
 } from '@tabler/icons-react'
@@ -18,39 +17,34 @@ interface Employee {
   last_name: string
   nickname?: string
   role: string
-  shift_type?: string
   department_name?: string
   is_active: boolean
+  weekly_shifts?: WeeklyShifts
 }
 
-// A cell value is either the special 'default' (clear override),
-// 'dayoff' (explicit day off), or a shift_configs.code such as "WC001".
+// A cell value is either 'dayoff' or a shift_configs.code such as "WC001".
 type ShiftValue = string
 
-const DAYOFF_META = { label: 'วันหยุด', short: '—', color: '#791F1F', bg: '#FCEBEB' }
-// Legacy fallback styling for old enum values still in the DB
-const LEGACY_META: Record<string, { label: string; short: string; color: string; bg: string }> = {
-  normal:   { label: 'กะปกติ', short: 'ป', color: '#0C447C', bg: '#E6F1FB' },
-  flexible: { label: 'ยืดหยุ่น', short: 'ย', color: '#633806', bg: '#FAEEDA' },
-  dayoff:   DAYOFF_META,
-}
+const DAYOFF_META = { color: '#791F1F', bg: '#FCEBEB' }
 
 function configMeta(code: string, configs: ShiftConfig[]) {
-  if (code === 'dayoff') return DAYOFF_META
-  if (LEGACY_META[code]) return LEGACY_META[code]
-  // It's a config code → look up by code or fallback to type-based color
+  if (code === 'dayoff' || !code) return DAYOFF_META
   const cfg = configs.find(c => c.code === code)
-  if (!cfg) return { label: code, short: code.slice(0, 4), color: '#534AB7', bg: '#EEEDFE' }
-  if (cfg.shift_type === 'flexible') return { label: cfg.code || cfg.name, short: cfg.code || cfg.name.slice(0,4), color: '#633806', bg: '#FAEEDA' }
-  return { label: cfg.code || cfg.name, short: cfg.code || cfg.name.slice(0,4), color: '#0C447C', bg: '#E6F1FB' }
+  if (!cfg) return { color: '#534AB7', bg: '#EEEDFE' }
+  if (cfg.shift_type === 'flexible') return { color: '#633806', bg: '#FAEEDA' }
+  return { color: '#0C447C', bg: '#E6F1FB' }
 }
 
-const DAY_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
-
-function weekDates(anchor: dayjs.Dayjs): dayjs.Dayjs[] {
-  const monday = anchor.day() === 0 ? anchor.subtract(6, 'day') : anchor.subtract(anchor.day() - 1, 'day')
-  return Array.from({ length: 7 }, (_, i) => monday.add(i, 'day'))
-}
+// Days ordered จันทร์→อาทิตย์ (Mon first, matches Thai work-week convention)
+const WEEK_DAYS: { num: number; label: string; short: string }[] = [
+  { num: 1, label: 'จันทร์', short: 'จ' },
+  { num: 2, label: 'อังคาร', short: 'อ' },
+  { num: 3, label: 'พุธ', short: 'พ' },
+  { num: 4, label: 'พฤหัสบดี', short: 'พฤ' },
+  { num: 5, label: 'ศุกร์', short: 'ศ' },
+  { num: 6, label: 'เสาร์', short: 'ส' },
+  { num: 0, label: 'อาทิตย์', short: 'อา' },
+]
 
 export default function ShiftsPage() {
   const { user } = useAuthStore()
@@ -128,35 +122,22 @@ function TabButton({
 function ScheduleTab() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [configs, setConfigs] = useState<ShiftConfig[]>([])
-  const [assignments, setAssignments] = useState<ShiftAssignment[]>([])
-  const [pending, setPending] = useState<Record<string, ShiftValue>>({})
-  const [anchor, setAnchor] = useState(dayjs())
+  // pending[empId][dayNum] = new value for that cell.
+  const [pending, setPending] = useState<Record<string, WeeklyShifts>>({})
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState({ text: '', ok: true })
-
-  const week = useMemo(() => weekDates(anchor), [anchor])
-  const startDate = week[0].format('YYYY-MM-DD')
-  const endDate = week[6].format('YYYY-MM-DD')
-
-  const assignedMap = useMemo(() => {
-    const m: Record<string, string> = {}
-    for (const a of assignments) m[`${a.employee_id}_${a.date}`] = a.shift_type
-    return m
-  }, [assignments])
 
   const load = async () => {
     setLoading(true)
     try {
-      const [eRes, sRes, cRes] = await Promise.allSettled([
+      const [eRes, cRes] = await Promise.allSettled([
         employeeApi.list(),
-        shiftApi.list(startDate, endDate),
         shiftConfigApi.list(),
       ])
       if (eRes.status === 'fulfilled') {
         const all: Employee[] = eRes.value.data.data || []
         setEmployees(all.filter(e => e.role !== 'owner' && e.is_active !== false))
       }
-      if (sRes.status === 'fulfilled') setAssignments(sRes.value.data.data || [])
       if (cRes.status === 'fulfilled') {
         setConfigs((cRes.value.data.data || []).filter((c: ShiftConfig) => c.is_active !== false))
       }
@@ -164,34 +145,43 @@ function ScheduleTab() {
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [startDate, endDate])
+  useEffect(() => { load() }, [])
 
-  const cellValue = (empId: string, date: string): ShiftValue => {
-    const key = `${empId}_${date}`
-    if (pending[key] !== undefined) return pending[key]
-    const assigned = assignedMap[key]
-    if (assigned) return assigned as ShiftValue
-    return 'default'
+  // Default value if nothing is set: 'dayoff'
+  const cellValue = (emp: Employee, dayNum: number): ShiftValue => {
+    const key = String(dayNum)
+    if (pending[emp.id] && pending[emp.id][key] !== undefined) return pending[emp.id][key]
+    const saved = emp.weekly_shifts || {}
+    return saved[key] || 'dayoff'
   }
 
-  const setCell = (empId: string, date: string, value: ShiftValue) => {
-    setPending(p => ({ ...p, [`${empId}_${date}`]: value }))
+  const setCell = (emp: Employee, dayNum: number, value: ShiftValue) => {
+    setPending(prev => {
+      const empWeek = { ...(prev[emp.id] || {}) }
+      empWeek[String(dayNum)] = value
+      return { ...prev, [emp.id]: empWeek }
+    })
   }
 
-  const hasChanges = Object.keys(pending).length > 0
+  const totalChanges = useMemo(() => {
+    let n = 0
+    for (const w of Object.values(pending)) n += Object.keys(w).length
+    return n
+  }, [pending])
 
   const save = async () => {
-    if (!hasChanges) return
+    if (totalChanges === 0) return
     setLoading(true)
     setMsg({ text: '', ok: true })
     try {
-      const items: ShiftBulkItem[] = Object.entries(pending).map(([key, value]) => {
-        const [employeeId, date] = key.split('_')
-        return { employeeId, date, shiftType: value }
+      const items: WeeklyShiftsBulkItem[] = Object.entries(pending).map(([empId, week]) => {
+        // Merge with existing saved schedule so we don't drop other days
+        const emp = employees.find(e => e.id === empId)
+        const saved = emp?.weekly_shifts || {}
+        return { employeeId: empId, weeklyShifts: { ...saved, ...week } }
       })
-      await shiftApi.bulkUpsert(items)
-      setMsg({ text: `บันทึก ${items.length} รายการแล้ว`, ok: true })
-      setPending({})
+      await employeeApi.bulkUpdateWeeklyShifts(items)
+      setMsg({ text: `บันทึก ${items.length} คนแล้ว`, ok: true })
       load()
     } catch (e: any) {
       setMsg({ text: e.response?.data?.message || 'เกิดข้อผิดพลาด', ok: false })
@@ -205,19 +195,8 @@ function ScheduleTab() {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-        <div className="text-sm text-gray-600">
-          สัปดาห์ {week[0].format('D MMM')} – {week[6].format('D MMM YYYY')}
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setAnchor(a => a.subtract(7, 'day'))} className="btn text-xs px-2 py-2">
-            <IconChevronLeft size={14} />
-          </button>
-          <button onClick={() => setAnchor(dayjs())} className="btn text-xs">วันนี้</button>
-          <button onClick={() => setAnchor(a => a.add(7, 'day'))} className="btn text-xs px-2 py-2">
-            <IconChevronRight size={14} />
-          </button>
-        </div>
+      <div className="text-xs text-gray-500 mb-2">
+        รูปแบบกะรายสัปดาห์ — ใช้ทุกสัปดาห์เหมือนกัน
       </div>
 
       {msg.text && (
@@ -235,7 +214,7 @@ function ScheduleTab() {
         <span className="text-gray-400">คำอธิบาย:</span>
         {configs.length === 0 && (
           <span className="text-amber-600 inline-flex items-center gap-1.5">
-            ⚠ ยังไม่มีกะใน &quot;ตั้งค่ากะ&quot; — สร้างกะก่อนเพื่อใช้งาน
+            ⚠ ยังไม่มีกะใน &quot;ตั้งค่ากะ&quot; — สร้างกะก่อนเพื่อเลือก
           </span>
         )}
         {configs.map(c => {
@@ -243,22 +222,19 @@ function ScheduleTab() {
           return (
             <span key={c.id} className="inline-flex items-center gap-1.5">
               <span
-                className="inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded text-[10px] font-medium"
+                className="inline-flex items-center justify-center min-w-[24px] h-5 px-1 rounded text-[10px] font-medium"
                 style={{ background: m.bg, color: m.color }}
               >
-                {c.code || c.name.slice(0,4)}
+                {c.code || c.name.slice(0, 4)}
               </span>
               <span className="text-gray-500">{c.name}</span>
             </span>
           )
         })}
         <span className="inline-flex items-center gap-1.5">
-          <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-medium" style={{ background: DAYOFF_META.bg, color: DAYOFF_META.color }}>—</span>
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-medium"
+            style={{ background: DAYOFF_META.bg, color: DAYOFF_META.color }}>—</span>
           วันหยุด
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-medium bg-gray-100 text-gray-400">·</span>
-          ใช้ค่าเริ่มต้น
         </span>
       </div>
 
@@ -270,16 +246,14 @@ function ScheduleTab() {
               <th className="sticky left-0 bg-gray-50 text-left px-3 py-2.5 text-xs font-medium text-gray-500 min-w-[220px]">
                 พนักงาน
               </th>
-              {week.map((d, i) => {
-                const isToday = d.isSame(dayjs(), 'day')
-                const isWeekend = d.day() === 0 || d.day() === 6
+              {WEEK_DAYS.map(d => {
+                const isWeekend = d.num === 0 || d.num === 6
                 return (
-                  <th key={i} className={clsx(
-                    'text-center px-2 py-2.5 text-xs font-medium min-w-[80px]',
-                    isToday ? 'text-[#1D9E75] bg-[#E1F5EE]/40' : isWeekend ? 'text-gray-400' : 'text-gray-600'
+                  <th key={d.num} className={clsx(
+                    'text-center px-2 py-2.5 text-xs font-medium min-w-[110px]',
+                    isWeekend ? 'text-gray-400' : 'text-gray-600'
                   )}>
-                    <div>{DAY_TH[d.day()]}</div>
-                    <div className="text-[11px] font-normal">{d.format('D/M')}</div>
+                    {d.label}
                   </th>
                 )
               })}
@@ -292,59 +266,63 @@ function ScheduleTab() {
                   {loading ? 'กำลังโหลด...' : 'ยังไม่มีพนักงาน (หรือมีแต่เจ้าของเท่านั้น)'}
                 </td>
               </tr>
-            ) : employees.map(emp => (
-              <tr key={emp.id} className="border-b border-black/[0.04] hover:bg-gray-50/40">
-                <td className="sticky left-0 bg-white px-3 py-2 min-w-[220px]">
-                  <div className="text-sm font-medium text-[#111110]">
-                    {emp.first_name} {emp.last_name}
-                    {emp.nickname && <span className="text-gray-400 font-normal ml-1">({emp.nickname})</span>}
-                  </div>
-                  <div className="text-[11px] text-gray-400">
-                    {emp.department_name || '—'} · ค่าเริ่มต้น: {emp.shift_type || 'normal'}
-                  </div>
-                </td>
-                {week.map((d, i) => {
-                  const dateStr = d.format('YYYY-MM-DD')
-                  const value = cellValue(emp.id, dateStr)
-                  const isPending = pending[`${emp.id}_${dateStr}`] !== undefined
-                  const isWeekend = d.day() === 0 || d.day() === 6
-                  const m = value !== 'default' ? configMeta(value, configs) : null
-                  return (
-                    <td key={i} className={clsx('px-2 py-2 text-center align-middle',
-                      isWeekend ? 'bg-gray-50/30' : '')}>
-                      <select
-                        value={value}
-                        onChange={e => setCell(emp.id, dateStr, e.target.value as ShiftValue)}
-                        className={clsx(
-                          'w-full text-[11px] px-1.5 py-1 rounded-md border transition-all cursor-pointer',
-                          isPending ? 'border-[#1D9E75] ring-1 ring-[#1D9E75]/30' : 'border-black/[0.08]',
-                          value === 'default' ? 'bg-gray-50 text-gray-500' : 'text-[#111110]'
-                        )}
-                        style={m ? { background: m.bg, color: m.color } : undefined}
-                      >
-                        <option value="default">· ค่าเริ่มต้น</option>
-                        {configs.map(c => (
-                          <option key={c.id} value={c.code || ''} disabled={!c.code}>
-                            {c.code || c.name} — {c.name}
-                          </option>
-                        ))}
-                        <option value="dayoff">— วันหยุด</option>
-                      </select>
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
+            ) : employees.map(emp => {
+              const empPending = pending[emp.id] || {}
+              const hasPending = Object.keys(empPending).length > 0
+              return (
+                <tr key={emp.id} className={clsx(
+                  'border-b border-black/[0.04] hover:bg-gray-50/40',
+                  hasPending && 'bg-[#FFFBEA]/40'
+                )}>
+                  <td className="sticky left-0 bg-white px-3 py-2 min-w-[220px]">
+                    <div className="text-sm font-medium text-[#111110]">
+                      {emp.first_name} {emp.last_name}
+                      {emp.nickname && <span className="text-gray-400 font-normal ml-1">({emp.nickname})</span>}
+                    </div>
+                    <div className="text-[11px] text-gray-400">
+                      {emp.department_name || '—'}
+                    </div>
+                  </td>
+                  {WEEK_DAYS.map(d => {
+                    const value = cellValue(emp, d.num)
+                    const isPending = empPending[String(d.num)] !== undefined
+                    const isWeekend = d.num === 0 || d.num === 6
+                    const m = configMeta(value, configs)
+                    return (
+                      <td key={d.num} className={clsx('px-2 py-2 text-center align-middle',
+                        isWeekend ? 'bg-gray-50/30' : '')}>
+                        <select
+                          value={value}
+                          onChange={e => setCell(emp, d.num, e.target.value)}
+                          className={clsx(
+                            'w-full text-[11px] px-1.5 py-1 rounded-md border transition-all cursor-pointer font-medium',
+                            isPending ? 'border-[#1D9E75] ring-1 ring-[#1D9E75]/30' : 'border-black/[0.08]'
+                          )}
+                          style={{ background: m.bg, color: m.color }}
+                        >
+                          {configs.map(c => (
+                            <option key={c.id} value={c.code || ''} disabled={!c.code}>
+                              {c.code} — {c.name}
+                            </option>
+                          ))}
+                          <option value="dayoff">— วันหยุด</option>
+                        </select>
+                      </td>
+                    )
+                  })}
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
 
       {/* Save bar */}
-      {hasChanges && (
+      {totalChanges > 0 && (
         <div className="sticky bottom-4 mt-4 flex justify-end">
           <div className="card flex items-center gap-3 shadow-md">
             <span className="text-sm text-gray-600">
-              มีการเปลี่ยนแปลง {Object.keys(pending).length} ช่อง
+              มีการเปลี่ยนแปลง {totalChanges} ช่อง · {Object.keys(pending).length} คน
             </span>
             <button onClick={discardChanges} className="btn text-xs">
               <IconRefresh size={13} /> ยกเลิก

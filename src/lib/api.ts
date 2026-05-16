@@ -108,6 +108,14 @@ export interface WorkDaysBulkItem {
   workDays: number[]
 }
 
+// Recurring weekly shift schedule. Keys are day-of-week numbers
+// ("0"=Sun..."6"=Sat). Values are a shift_configs.code or "dayoff".
+export type WeeklyShifts = Record<string, string>
+export interface WeeklyShiftsBulkItem {
+  employeeId: string
+  weeklyShifts: WeeklyShifts
+}
+
 export interface SelfUpdate {
   nickname?: string
   phone?: string
@@ -121,6 +129,8 @@ export const employeeApi = {
   updateMe: (data: SelfUpdate) => api.patch('/employees/me', data),
   bulkUpdateWorkDays: (items: WorkDaysBulkItem[]) =>
     api.post('/employees/work-days/bulk', { items }),
+  bulkUpdateWeeklyShifts: (items: WeeklyShiftsBulkItem[]) =>
+    api.post('/employees/weekly-shifts/bulk', { items }),
 }
 
 // Department APIs
