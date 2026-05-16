@@ -179,6 +179,9 @@ export interface SelfUpdate {
 
 export const employeeApi = {
   list: () => api.get('/employees'),
+  // Anyone authenticated; returns their direct reports (may be empty).
+  // Used by /kpi so a manager-without-HR-role can still pick a subordinate.
+  mySubordinates: () => api.get('/employees/my-subordinates'),
   me: () => api.get('/employees/me'),
   getOne: (id: string) => api.get(`/employees/${id}`),
   update: (id: string, data: EmployeeUpdate) => api.patch(`/employees/${id}`, data),
@@ -457,6 +460,100 @@ export interface AuditLogParams {
 }
 export const auditApi = {
   list: (params?: AuditLogParams) => api.get('/audit-logs', { params }),
+}
+
+// KPI APIs
+export interface KpiCriterion {
+  id: string
+  name: string
+  description: string | null
+  weight: string | number     // NUMERIC from pg may arrive as string
+  department_id: string | null
+  department_name?: string | null
+  is_active: boolean
+  created_at: string
+}
+export interface KpiCriterionUpsert {
+  name?: string
+  description?: string | null
+  weight?: number
+  // null = clear department; undefined = leave unchanged
+  departmentId?: string | null
+  isActive?: boolean
+}
+
+export interface KpiScoreEntry {
+  criterionId: string
+  score: number  // 1..5
+  note?: string
+  // Joined server-side on GET /kpi/reviews/:id for display
+  criterion_name?: string
+  criterion_weight?: string | number | null
+  criterion_active?: boolean
+}
+export type KpiReviewStatus = 'draft' | 'submitted' | 'approved'
+export interface KpiReview {
+  id: string
+  employee_id: string
+  reviewer_id: string | null
+  quarter: 1 | 2 | 3 | 4
+  year: number
+  scores: KpiScoreEntry[]
+  overall_score: string | number | null
+  status: KpiReviewStatus
+  comments: string | null
+  created_at: string
+  updated_at: string
+  // joined employee
+  first_name?: string
+  last_name?: string
+  nickname?: string
+  avatar_url?: string
+  emp_code?: string
+  position?: string
+  department_name?: string
+  manager_id?: string | null
+  // joined reviewer
+  reviewer_email?: string | null
+  reviewer_first_name?: string | null
+  reviewer_last_name?: string | null
+  reviewer_nickname?: string | null
+  reviewer_avatar_url?: string | null
+}
+export interface KpiReviewCreate {
+  employeeId: string
+  quarter: 1 | 2 | 3 | 4
+  year: number
+  scores: KpiScoreEntry[]
+  comments?: string
+}
+export interface KpiReviewUpdate {
+  scores?: KpiScoreEntry[]
+  comments?: string
+  status?: KpiReviewStatus
+}
+export interface KpiReviewListParams {
+  employeeId?: string
+  quarter?: number
+  year?: number
+  status?: KpiReviewStatus
+}
+
+export const kpiApi = {
+  // Criteria
+  listCriteria: (includeInactive = false) =>
+    api.get('/kpi/criteria', { params: includeInactive ? { includeInactive: 1 } : {} }),
+  createCriterion: (data: KpiCriterionUpsert) => api.post('/kpi/criteria', data),
+  updateCriterion: (id: string, data: KpiCriterionUpsert) => api.patch(`/kpi/criteria/${id}`, data),
+  deleteCriterion: (id: string) => api.delete(`/kpi/criteria/${id}`),
+  // Reviews
+  listReviews: (params?: KpiReviewListParams) => api.get('/kpi/reviews', { params }),
+  getReview: (id: string) => api.get(`/kpi/reviews/${id}`),
+  createReview: (data: KpiReviewCreate) => api.post('/kpi/reviews', data),
+  updateReview: (id: string, data: KpiReviewUpdate) => api.patch(`/kpi/reviews/${id}`, data),
+  submitReview: (id: string) => api.post(`/kpi/reviews/${id}/submit`),
+  approveReview: (id: string) => api.post(`/kpi/reviews/${id}/approve`),
+  deleteReview: (id: string) => api.delete(`/kpi/reviews/${id}`),
 }
 
 export default api
