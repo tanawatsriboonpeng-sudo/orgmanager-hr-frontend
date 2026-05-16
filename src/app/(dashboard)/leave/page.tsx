@@ -4,7 +4,7 @@ import { leaveApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
   IconPlus, IconCheck, IconX, IconCalendarOff,
-  IconUserCheck, IconUserX, IconTrash, IconAlertCircle, IconCrown,
+  IconUserCheck, IconUserX, IconTrash, IconAlertCircle,
 } from '@tabler/icons-react'
 import dayjs from 'dayjs'
 import clsx from 'clsx'
@@ -209,15 +209,6 @@ export default function LeavePage() {
           {toast.ok ? <IconCheck size={14} /> : <IconAlertCircle size={14} />}
           <span className="flex-1">{toast.text}</span>
           <button onClick={() => setToast(null)} aria-label="ปิด"><IconX size={13} /></button>
-        </div>
-      )}
-
-      {isOwner && (
-        <div className="card text-center py-6 mb-5"
-          style={{ background: 'linear-gradient(135deg, #EEEDFE 0%, #FFFFFF 60%)' }}>
-          <IconCrown size={26} className="mx-auto text-[#534AB7] mb-1.5" />
-          <p className="text-sm text-[#111110] font-medium">เจ้าของไม่ต้องยื่นลา</p>
-          <p className="text-xs text-gray-500 mt-1">รายการลารออนุมัติแสดงด้านล่าง</p>
         </div>
       )}
 
