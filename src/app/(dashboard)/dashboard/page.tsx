@@ -49,14 +49,8 @@ function SectionHeader({ title, href }: { title: string; href?: string }) {
   )
 }
 
-// ─── Mock attendance chart data ───────────────────────────────────────────────
-const CHART_DATA = [
-  { day: 'จ', present: 42, late: 3, absent: 1 },
-  { day: 'อ', present: 40, late: 5, absent: 2 },
-  { day: 'พ', present: 44, late: 2, absent: 0 },
-  { day: 'พฤ', present: 42, late: 3, absent: 1 },
-  { day: 'ศ', present: 0, late: 0, absent: 0 },
-]
+// Chart data is now fetched from /attendance/recent-summary at runtime
+// (was previously a static mock that looked deceptively real).
 
 // ─── Announcement item ────────────────────────────────────────────────────────
 function AnnouncementItem({ item, onRead }: { item: any; onRead: (id: string) => void }) {
@@ -92,37 +86,48 @@ function AnnouncementItem({ item, onRead }: { item: any; onRead: (id: string) =>
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { user } = useAuthStore()
+  const role = user?.role
+  const isOwner = role === 'owner'
+  const isHROrOwner = role === 'hr' || role === 'owner'
+  const today = dayjs().format('dddd ที่ D MMMM YYYY')
+
   const [todayLog, setTodayLog] = useState<any>(null)
   const [summary, setSummary] = useState<any>(null)
+  const [chartRows, setChartRows] = useState<any[]>([])
   const [announcements, setAnnouncements] = useState<any[]>([])
   const [leaveQuota, setLeaveQuota] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
-  const isHROrOwner = user?.role === 'hr' || user?.role === 'owner'
-  const today = dayjs().format('dddd ที่ D MMMM YYYY')
-
   useEffect(() => {
     const loadAll = async () => {
       try {
-        const [todayRes, annoRes, quotaRes] = await Promise.allSettled([
-          attendanceApi.today(),
-          announcementApi.list(),
-          leaveApi.myQuota(),
-        ])
-        if (todayRes.status === 'fulfilled') setTodayLog(todayRes.value.data.data)
-        if (annoRes.status === 'fulfilled') setAnnouncements(annoRes.value.data.data || [])
-        if (quotaRes.status === 'fulfilled') setLeaveQuota(quotaRes.value.data.data || [])
+        // Owner doesn't have a personal attendance log or quota — skip
+        // those calls so we don't 404 noisily.
+        const tasks: Promise<any>[] = [announcementApi.list()]
+        if (!isOwner) tasks.push(attendanceApi.today(), leaveApi.myQuota())
+        const results = await Promise.allSettled(tasks)
+        const annoRes = results[0]
+        if (annoRes.status === 'fulfilled') setAnnouncements((annoRes.value as any).data.data || [])
+        if (!isOwner) {
+          const todayRes = results[1], quotaRes = results[2]
+          if (todayRes.status === 'fulfilled') setTodayLog((todayRes.value as any).data.data)
+          if (quotaRes.status === 'fulfilled') setLeaveQuota((quotaRes.value as any).data.data || [])
+        }
 
         if (isHROrOwner) {
-          const sumRes = await attendanceApi.dailySummary().catch(() => null)
+          const [sumRes, chartRes] = await Promise.all([
+            attendanceApi.dailySummary().catch(() => null),
+            attendanceApi.recentSummary(5).catch(() => null),
+          ])
           if (sumRes) setSummary(sumRes.data.data)
+          if (chartRes) setChartRows(chartRes.data.data || [])
         }
       } finally {
         setLoading(false)
       }
     }
     loadAll()
-  }, [])
+  }, [isOwner, isHROrOwner])
 
   const handleReadAnnouncement = async (id: string) => {
     try {
@@ -207,20 +212,30 @@ export default function DashboardPage() {
         {/* Attendance chart (HR/Owner) */}
         {isHROrOwner && (
           <div className="card lg:col-span-2">
-            <SectionHeader title="การมาทำงาน 5 วัน" href="/attendance" />
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={CHART_DATA} barSize={14} barGap={3}>
-                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#9CA3AF' }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#9CA3AF' }} />
-                <Tooltip
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: 'none' }}
-                  cursor={{ fill: 'rgba(0,0,0,0.03)' }}
-                />
-                <Bar dataKey="present" name="มาทำงาน" radius={[4,4,0,0]} fill="#1D9E75" />
-                <Bar dataKey="late" name="สาย" radius={[4,4,0,0]} fill="#BA7517" />
-                <Bar dataKey="absent" name="ขาด" radius={[4,4,0,0]} fill="#E24B4A" />
-              </BarChart>
-            </ResponsiveContainer>
+            <SectionHeader title="การมาทำงาน 5 วันทำการล่าสุด" href="/attendance" />
+            {chartRows.length === 0 || chartRows.every(r => !r.present && !r.late && !r.absent) ? (
+              <div className="h-[180px] flex items-center justify-center text-xs text-gray-400">
+                {loading ? 'กำลังโหลด…' : 'ยังไม่มีข้อมูลการลงเวลาในช่วงนี้'}
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={chartRows} barSize={14} barGap={3}>
+                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#9CA3AF' }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#9CA3AF' }} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{ fontSize: 12, borderRadius: 8, border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: 'none' }}
+                    cursor={{ fill: 'rgba(0,0,0,0.03)' }}
+                    labelFormatter={(label, payload) => {
+                      const row = payload?.[0]?.payload as any
+                      return row?.date ? dayjs(row.date).format('D MMM YY') : label
+                    }}
+                  />
+                  <Bar dataKey="present" name="มาทำงาน" radius={[4,4,0,0]} fill="#1D9E75" />
+                  <Bar dataKey="late"    name="สาย"     radius={[4,4,0,0]} fill="#BA7517" />
+                  <Bar dataKey="absent"  name="ขาด"     radius={[4,4,0,0]} fill="#E24B4A" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         )}
 
@@ -250,22 +265,14 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Leave quota fallback (employee, no data yet) */}
-        {user?.role === 'employee' && leaveQuota.length === 0 && !loading && (
+        {/* Leave quota fallback (employee, no data yet) — show empty
+            state instead of fabricated quota numbers. */}
+        {role === 'employee' && leaveQuota.length === 0 && !loading && (
           <div className="card">
             <SectionHeader title="วันลาคงเหลือ" href="/leave" />
-            <div className="space-y-3">
-              {[['ลากิจ','3'],['ลาพักร้อน','6'],['ลาป่วย','30']].map(([n,t]) => (
-                <div key={n}>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-gray-700">{n}</span>
-                    <span className="font-medium">{t}/{t} วัน</span>
-                  </div>
-                  <div className="h-1.5 bg-gray-100 rounded-full">
-                    <div className="h-full rounded-full bg-[#1D9E75]" style={{ width: '0%' }} />
-                  </div>
-                </div>
-              ))}
+            <div className="text-center py-6 text-xs text-gray-400">
+              ยังไม่ได้ตั้งค่าโควตาวันลา
+              <div className="text-[11px] text-gray-400 mt-1">ติดต่อ HR เพื่อขอเปิดโควตา</div>
             </div>
           </div>
         )}
@@ -284,23 +291,27 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Quick actions */}
+        {/* Quick actions — filtered by role so owner doesn't see actions
+            they can't take (เช็คอิน / ขอ OT are blocked at the backend
+            for owner). */}
         <div className="card">
           <SectionHeader title="ทางลัด" />
           <div className="grid grid-cols-2 gap-2">
             {[
-              { href: '/attendance', icon: IconClockCheck, label: 'เช็คอิน', color: '#1D9E75', bg: '#E1F5EE' },
-              { href: '/leave', icon: IconCalendarOff, label: 'ยื่นลา', color: '#534AB7', bg: '#EEEDFE' },
-              { href: '/ot', icon: IconClockPlus, label: 'ขอ OT', color: '#BA7517', bg: '#FAEEDA' },
-              { href: '/payroll', icon: IconTrendingUp, label: 'ดูสลิป', color: '#185FA5', bg: '#E6F1FB' },
-            ].map(({ href, icon: Icon, label, color, bg }) => (
-              <Link key={href} href={href} className="flex flex-col items-center gap-2 p-3 rounded-[10px] border border-black/[0.05] hover:border-black/[0.1] hover:bg-gray-50/80 transition-all text-center">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: bg }}>
-                  <Icon size={16} style={{ color }} />
-                </div>
-                <span className="text-xs text-gray-600 font-medium">{label}</span>
-              </Link>
-            ))}
+              { href: '/attendance', icon: IconClockCheck, label: 'เช็คอิน', color: '#1D9E75', bg: '#E1F5EE', roles: ['hr','employee'] as const },
+              { href: '/leave',      icon: IconCalendarOff, label: 'ยื่นลา', color: '#534AB7', bg: '#EEEDFE', roles: ['hr','employee','owner'] as const },
+              { href: '/ot',         icon: IconClockPlus, label: 'ขอ OT',  color: '#BA7517', bg: '#FAEEDA', roles: ['hr','employee'] as const },
+              { href: '/payroll',    icon: IconTrendingUp, label: role === 'employee' ? 'ดูสลิป' : 'เงินเดือน', color: '#185FA5', bg: '#E6F1FB', roles: ['hr','employee','owner'] as const },
+            ]
+              .filter(a => !role || (a.roles as readonly string[]).includes(role))
+              .map(({ href, icon: Icon, label, color, bg }) => (
+                <Link key={href} href={href} className="flex flex-col items-center gap-2 p-3 rounded-[10px] border border-black/[0.05] hover:border-black/[0.1] hover:bg-gray-50/80 transition-all text-center">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: bg }}>
+                    <Icon size={16} style={{ color }} />
+                  </div>
+                  <span className="text-xs text-gray-600 font-medium">{label}</span>
+                </Link>
+              ))}
           </div>
         </div>
 

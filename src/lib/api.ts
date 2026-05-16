@@ -63,6 +63,8 @@ export const attendanceApi = {
     api.get('/attendance/my-history', { params: { month, year } }),
   dailySummary: (date?: string) =>
     api.get('/attendance/daily-summary', { params: { date } }),
+  recentSummary: (days = 5) =>
+    api.get('/attendance/recent-summary', { params: { days } }),
 }
 
 // Leave APIs
