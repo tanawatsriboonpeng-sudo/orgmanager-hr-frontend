@@ -7,6 +7,9 @@ import {
   IconHistory, IconRefresh, IconFilter, IconUser,
   IconChevronDown, IconChevronUp, IconCalendar,
   IconReceipt2, IconCalendarOff, IconShield,
+  IconClockPlus, IconUsers, IconKey, IconBuilding,
+  IconHierarchy, IconSettings, IconUserPlus, IconUserOff,
+  IconChartBar,
 } from '@tabler/icons-react'
 import dayjs from 'dayjs'
 import clsx from 'clsx'
@@ -15,14 +18,39 @@ import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
 // Friendly Thai labels + visual treatment for known actions. Anything not
 // listed renders as the raw action string with a neutral grey badge.
 const ACTION_META: Record<string, { label: string; cls: string; icon: any; verb: string }> = {
+  // Approvals / workflow
   leave_approval:        { label: 'อนุมัติ/ปฏิเสธคำขอลา', cls: 'badge-purple', icon: IconCalendarOff, verb: 'ดำเนินการคำขอลา' },
+  ot_approval:           { label: 'อนุมัติ/ปฏิเสธ OT',    cls: 'badge-purple', icon: IconClockPlus,  verb: 'ดำเนินการคำขอ OT' },
+  // Payroll
   payroll_approve:       { label: 'อนุมัติสลิป',          cls: 'badge-amber',  icon: IconReceipt2,   verb: 'อนุมัติสลิปเงินเดือน' },
   payroll_mark_paid:     { label: 'จ่ายสลิป',             cls: 'badge-green',  icon: IconReceipt2,   verb: 'ทำเครื่องหมายจ่ายแล้ว' },
   payroll_bulk_generate: { label: 'สร้างสลิปประจำเดือน',  cls: 'badge-blue',   icon: IconReceipt2,   verb: 'สร้างสลิปทั้งบริษัท' },
+  // Employee
+  employee_create:        { label: 'เพิ่มพนักงาน',         cls: 'badge-green', icon: IconUserPlus,  verb: 'สร้างบัญชีพนักงานใหม่' },
+  employee_update:        { label: 'แก้ไขพนักงาน',         cls: 'badge-blue',  icon: IconUsers,     verb: 'อัปเดตข้อมูลพนักงาน' },
+  employee_toggle_active: { label: 'เปลี่ยนสถานะบัญชี',     cls: 'badge-amber', icon: IconUserOff,   verb: 'ระงับ/เปิดใช้งานบัญชีพนักงาน' },
+  employee_password_reset:{ label: 'รีเซ็ตรหัสผ่าน',        cls: 'badge-red',   icon: IconKey,       verb: 'รีเซ็ตรหัสผ่านพนักงาน' },
+  // Organization
+  org_settings_update:   { label: 'แก้ไขข้อมูลบริษัท',     cls: 'badge-amber', icon: IconSettings,  verb: 'อัปเดตข้อมูลองค์กร' },
+  department_create:     { label: 'เพิ่มแผนก',             cls: 'badge-green', icon: IconBuilding,  verb: 'สร้างแผนกใหม่' },
+  department_update:     { label: 'แก้ไขแผนก',             cls: 'badge-blue',  icon: IconBuilding,  verb: 'อัปเดตแผนก' },
+  department_delete:     { label: 'ลบแผนก',                cls: 'badge-red',   icon: IconBuilding,  verb: 'ลบแผนก' },
+  position_create:       { label: 'เพิ่มตำแหน่ง',          cls: 'badge-green', icon: IconHierarchy, verb: 'สร้างตำแหน่งใหม่' },
+  position_update:       { label: 'แก้ไขตำแหน่ง',          cls: 'badge-blue',  icon: IconHierarchy, verb: 'อัปเดตตำแหน่ง' },
+  position_delete:       { label: 'ลบตำแหน่ง',             cls: 'badge-red',   icon: IconHierarchy, verb: 'ลบตำแหน่ง' },
+  // KPI
+  kpi_approve:           { label: 'อนุมัติการประเมิน',    cls: 'badge-amber', icon: IconChartBar,  verb: 'อนุมัติผลประเมิน KPI' },
 }
 const RESOURCE_TH: Record<string, string> = {
   leave_requests:  'คำขอลา',
+  ot_requests:     'คำขอ OT',
   payroll_records: 'สลิปเงินเดือน',
+  employees:       'พนักงาน',
+  users:           'บัญชีผู้ใช้',
+  org_settings:    'ข้อมูลบริษัท',
+  departments:     'แผนก',
+  positions:       'ตำแหน่ง',
+  kpi_reviews:     'การประเมิน KPI',
 }
 
 function relativeTime(iso: string): string {
