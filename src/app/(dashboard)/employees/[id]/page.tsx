@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { employeeApi, departmentApi, EmployeeUpdate, SelfUpdate } from '@/lib/api'
+import { employeeApi, departmentApi, positionApi, type Position, EmployeeUpdate, SelfUpdate } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
   IconArrowLeft, IconUser, IconId, IconBriefcase, IconCash,
@@ -20,6 +20,7 @@ interface Profile {
   nickname?: string
   phone?: string
   position?: string
+  position_id?: string | null
   department_name?: string
   manager_id?: string | null
   avatar_url?: string | null
@@ -119,6 +120,7 @@ export default function EmployeeProfilePage() {
   const [tab, setTab] = useState<TabKey>('basic')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([])
+  const [positions, setPositions] = useState<Position[]>([])
 
   const isOwner = user?.role === 'owner'
   const isHR = isOwner || user?.role === 'hr'
@@ -139,11 +141,16 @@ export default function EmployeeProfilePage() {
       const p = res.data.data as Profile
       setProfile(p)
       setForm({})
-      // Also load departments for the dropdown (HR only)
+      // Also load departments + positions for HR-only dropdowns. Positions
+      // power the "ตำแหน่ง" select on the employment tab — open to everyone
+      // because the endpoint is auth-only and the data is needed to render
+      // the readonly view too.
       if (isHR) {
         const d = await departmentApi.list().catch(() => null)
         if (d) setDepartments(d.data.data || [])
       }
+      const p = await positionApi.list().catch(() => null)
+      if (p) setPositions(p.data.data || [])
     } catch (e: any) {
       setMsg({ text: e.response?.data?.message || 'โหลดข้อมูลไม่ได้', ok: false })
     } finally { setLoading(false) }
@@ -169,7 +176,8 @@ export default function EmployeeProfilePage() {
       // Map snake_case form keys → camelCase API payload
       const map: Record<string, string> = {
         first_name: 'firstName', last_name: 'lastName', nickname: 'nickname', phone: 'phone',
-        position: 'position', department_name: 'department',
+        position: 'position', position_id: 'positionId',
+        department_name: 'department',
         base_salary: 'baseSalary', avatar_url: 'avatarUrl',
         bank_account: 'bankAccount', bank_name: 'bankName', national_id: 'nationalId',
         title: 'title', first_name_en: 'firstNameEn', last_name_en: 'lastNameEn',
@@ -400,8 +408,22 @@ export default function EmployeeProfilePage() {
             <Grid>
               <Field label="รหัสพนักงาน" value={profile.employee_id} disabled
                 onChange={() => {}} />
-              <Field label="ตำแหน่ง" value={fieldValue('position') || ''}
-                disabled={!canEditEmployment} onChange={v => setField('position', v)} />
+              {/* Position is now an FK to the positions tree. Editing
+                  picks a row by id; display falls back to the legacy
+                  position text when the FK is null (unmatched on
+                  backfill) so the data point isn't visually lost. */}
+              {canEditEmployment ? (
+                <Select label="ตำแหน่ง" value={fieldValue('position_id') || ''}
+                  options={[
+                    { value: '', label: '— ไม่ระบุ' },
+                    ...positions.map(p => ({ value: p.id, label: p.name })),
+                  ]}
+                  disabled={!canEditEmployment}
+                  onChange={v => setField('position_id', v)} />
+              ) : (
+                <Field label="ตำแหน่ง" value={fieldValue('position') || ''} disabled
+                  onChange={() => {}} />
+              )}
               {isHR && departments.length > 0 ? (
                 <Select label="แผนก" value={fieldValue('department_name') || ''}
                   options={[{ value: '', label: '— ไม่มี' }, ...departments.map(d => ({ value: d.name, label: d.name }))]}

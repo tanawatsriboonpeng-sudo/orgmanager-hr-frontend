@@ -98,6 +98,10 @@ export interface EmployeeUpdate {
   nickname?: string
   phone?: string
   position?: string
+  // Canonical link to the positions tree (overrides position text when
+  // both are sent — backend resolves the position name from this id and
+  // writes both columns in sync). Pass null to clear.
+  positionId?: string | null
   department?: string
   shiftType?: string
   baseSalary?: number

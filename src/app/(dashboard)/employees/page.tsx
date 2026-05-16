@@ -1,7 +1,7 @@
 'use client'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthStore } from '@/lib/store'
-import { employeeApi, orgApi, departmentApi } from '@/lib/api'
+import { employeeApi, orgApi, departmentApi, positionApi, type Position } from '@/lib/api'
 import api from '@/lib/api'
 import {
   IconUserPlus, IconEdit, IconKey, IconCheck, IconX, IconEye,
@@ -36,6 +36,7 @@ interface Employee {
   email: string
   role: string
   position: string
+  position_id?: string | null
   department_name: string
   shift_type: string
   base_salary: number
@@ -76,9 +77,11 @@ export default function EmployeesPage() {
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState({ text: '', ok: true })
 
+  const [positions, setPositions] = useState<Position[]>([])
+
   const [form, setForm] = useState({
     firstName: '', lastName: '', email: '',
-    employeeId: '', position: '', department: 'IT',
+    employeeId: '', position: '', positionId: '', department: 'IT',
     role: 'employee',
     baseSalary: '', password: '', confirmPassword: '',
   })
@@ -111,7 +114,14 @@ export default function EmployeesPage() {
     } catch {}
   }
 
-  useEffect(() => { load(); loadCompany(); loadDepartments() }, [])
+  const loadPositions = async () => {
+    try {
+      const r = await positionApi.list()
+      setPositions(r.data.data || [])
+    } catch {}
+  }
+
+  useEffect(() => { load(); loadCompany(); loadDepartments(); loadPositions() }, [])
 
   // Auto-dismiss success messages after 3.5s; errors stay until user closes.
   useEffect(() => {
@@ -195,7 +205,7 @@ export default function EmployeesPage() {
     // list so we don't submit a stale 'IT' that may not exist anymore.
     const defaultDept = departments[0]?.name || SEED_DEPARTMENTS[0]
     setForm({ firstName: '', lastName: '', email: '', employeeId: '',
-      position: '', department: defaultDept, role: 'employee',
+      position: '', positionId: '', department: defaultDept, role: 'employee',
       baseSalary: '', password: '', confirmPassword: '' })
     setEditEmp(null)
     setShowForm(false)
@@ -226,7 +236,14 @@ export default function EmployeesPage() {
       if (editEmp) {
         await api.patch(`/employees/${editEmp.id}`, {
           firstName: form.firstName, lastName: form.lastName,
-          position: form.position, department: form.department,
+          // positionId is canonical — backend resolves the name and writes
+          // both position_id and the legacy position text in sync. Empty
+          // string clears both. Only sent when changed from the loaded
+          // value to avoid stomping a still-valid legacy text-only row.
+          ...(form.positionId !== (editEmp.position_id || '')
+            ? { positionId: form.positionId || null }
+            : {}),
+          department: form.department,
           baseSalary: parseFloat(form.baseSalary) || 0,
           role: form.role,
           // Only send employeeId if HR actually changed it, so a no-op
@@ -238,7 +255,8 @@ export default function EmployeesPage() {
         await api.post('/employees/create', {
           firstName: form.firstName, lastName: form.lastName,
           email: form.email, employeeId: form.employeeId,
-          position: form.position, department: form.department,
+          ...(form.positionId ? { positionId: form.positionId } : {}),
+          department: form.department,
           role: form.role,
           baseSalary: parseFloat(form.baseSalary) || 0,
           password: form.password,
@@ -257,7 +275,9 @@ export default function EmployeesPage() {
     setForm({
       firstName: emp.first_name, lastName: emp.last_name,
       email: emp.email, employeeId: emp.employee_id,
-      position: emp.position || '', department: emp.department_name || 'IT',
+      position: emp.position || '',
+      positionId: emp.position_id || '',
+      department: emp.department_name || 'IT',
       role: emp.role,
       baseSalary: String(emp.base_salary || ''), password: '', confirmPassword: '',
     })
@@ -375,9 +395,24 @@ export default function EmployeesPage() {
             </div>
             <div>
               <label className="label">ตำแหน่ง</label>
-              <input className="input" value={form.position}
-                onChange={e => setForm(p => ({ ...p, position: e.target.value }))}
-                placeholder="เช่น Developer, บัญชี" />
+              <select className="input" value={form.positionId}
+                onChange={e => setForm(p => ({ ...p, positionId: e.target.value }))}>
+                <option value="">— ไม่ระบุ —</option>
+                {positions.map(pos => (
+                  <option key={pos.id} value={pos.id}>{pos.name}</option>
+                ))}
+              </select>
+              {/* Legacy free-text position that didn't match a positions
+                  tree entry on backfill. Shown as a hint so HR can see
+                  what was there before picking a structured one. */}
+              {editEmp && !form.positionId && form.position && (
+                <p className="text-[10px] text-gray-400 mt-1">เดิม: {form.position}</p>
+              )}
+              {positions.length === 0 && (
+                <p className="text-[10px] text-gray-400 mt-1">
+                  ยังไม่มีตำแหน่ง — สร้างใน <Link href="/org-chart" className="text-[#1D9E75] hover:underline">โครงสร้างตำแหน่ง</Link>
+                </p>
+              )}
             </div>
             <div>
               <label className="label">แผนก</label>
