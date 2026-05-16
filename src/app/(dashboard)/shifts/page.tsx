@@ -5,9 +5,11 @@ import { useAuthStore } from '@/lib/store'
 import dayjs from 'dayjs'
 import {
   IconCalendarTime, IconChevronLeft, IconChevronRight,
-  IconCheck, IconX, IconDeviceFloppy, IconRefresh
+  IconCheck, IconX, IconDeviceFloppy, IconRefresh,
+  IconSettings, IconCalendarStats
 } from '@tabler/icons-react'
 import clsx from 'clsx'
+import ShiftRulesEditor from '@/components/shifts/ShiftRulesEditor'
 
 interface Employee {
   id: string
@@ -20,8 +22,6 @@ interface Employee {
   is_active: boolean
 }
 
-// shift_type: undefined → uses employee default (from employees.shift_type)
-// 'normal' | 'flexible' | 'dayoff' → explicit override
 type ShiftValue = 'normal' | 'flexible' | 'dayoff' | 'default'
 
 const SHIFT_META: Record<string, { label: string; short: string; color: string; bg: string }> = {
@@ -33,7 +33,6 @@ const SHIFT_META: Record<string, { label: string; short: string; color: string; 
 const DAY_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 
 function weekDates(anchor: dayjs.Dayjs): dayjs.Dayjs[] {
-  // Week starts Monday
   const monday = anchor.day() === 0 ? anchor.subtract(6, 'day') : anchor.subtract(anchor.day() - 1, 'day')
   return Array.from({ length: 7 }, (_, i) => monday.add(i, 'day'))
 }
@@ -41,10 +40,78 @@ function weekDates(anchor: dayjs.Dayjs): dayjs.Dayjs[] {
 export default function ShiftsPage() {
   const { user } = useAuthStore()
   const isHR = user?.role === 'hr' || user?.role === 'owner'
+  const isOwner = user?.role === 'owner'
 
+  const [tab, setTab] = useState<'schedule' | 'rules'>('schedule')
+
+  if (!isHR) {
+    return (
+      <div className="p-6 max-w-3xl mx-auto">
+        <div className="card text-center py-10">
+          <IconCalendarTime size={28} className="mx-auto text-gray-300 mb-2" />
+          <p className="text-sm text-gray-500">หน้านี้สำหรับ HR/เจ้าของเท่านั้น</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto">
+      <div className="mb-4">
+        <h1 className="text-xl font-semibold text-[#111110] flex items-center gap-2">
+          <IconCalendarTime size={20} className="text-[#1D9E75]" />
+          กะการทำงาน
+        </h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          {tab === 'schedule'
+            ? 'กำหนดกะของพนักงานรายวัน — ค่าว่างจะใช้กะเริ่มต้นของพนักงานคนนั้น'
+            : 'ตั้งค่ารายละเอียดของแต่ละกะ — เวลาเริ่ม/เลิก เกณฑ์สาย/ขาด'}
+        </p>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-5 border-b border-black/[0.06]">
+        <TabButton active={tab === 'schedule'} onClick={() => setTab('schedule')} icon={IconCalendarStats}>
+          ตารางรายสัปดาห์
+        </TabButton>
+        <TabButton active={tab === 'rules'} onClick={() => setTab('rules')} icon={IconSettings}>
+          ตั้งค่ากะ
+        </TabButton>
+      </div>
+
+      {tab === 'rules' ? (
+        <ShiftRulesEditor isOwner={isOwner} />
+      ) : (
+        <ScheduleTab />
+      )}
+    </div>
+  )
+}
+
+function TabButton({
+  active, onClick, icon: Icon, children,
+}: { active: boolean; onClick: () => void; icon: any; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+        active
+          ? 'border-[#1D9E75] text-[#085041]'
+          : 'border-transparent text-gray-500 hover:text-gray-700'
+      )}
+    >
+      <span className="inline-flex items-center gap-1.5">
+        <Icon size={14} />
+        {children}
+      </span>
+    </button>
+  )
+}
+
+function ScheduleTab() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [assignments, setAssignments] = useState<ShiftAssignment[]>([])
-  // pending edits keyed by `${empId}_${date}` → value
   const [pending, setPending] = useState<Record<string, ShiftValue>>({})
   const [anchor, setAnchor] = useState(dayjs())
   const [loading, setLoading] = useState(false)
@@ -54,7 +121,6 @@ export default function ShiftsPage() {
   const startDate = week[0].format('YYYY-MM-DD')
   const endDate = week[6].format('YYYY-MM-DD')
 
-  // Build a lookup: `${empId}_${date}` → shift_type
   const assignedMap = useMemo(() => {
     const m: Record<string, string> = {}
     for (const a of assignments) m[`${a.employee_id}_${a.date}`] = a.shift_type
@@ -69,7 +135,6 @@ export default function ShiftsPage() {
         shiftApi.list(startDate, endDate),
       ])
       if (eRes.status === 'fulfilled') {
-        // Owners don't have shifts
         const all: Employee[] = eRes.value.data.data || []
         setEmployees(all.filter(e => e.role !== 'owner' && e.is_active !== false))
       }
@@ -80,18 +145,7 @@ export default function ShiftsPage() {
 
   useEffect(() => { load() }, [startDate, endDate])
 
-  if (!isHR) {
-    return (
-      <div className="p-6 max-w-3xl mx-auto">
-        <div className="card text-center py-10">
-          <IconCalendarTime size={28} className="mx-auto text-gray-300 mb-2" />
-          <p className="text-sm text-gray-500">หน้านี้สำหรับ HR/เจ้าของเท่านั้น</p>
-        </div>
-      </div>
-    )
-  }
-
-  const cellValue = (empId: string, date: string, defaultShift?: string): ShiftValue | 'default' => {
+  const cellValue = (empId: string, date: string): ShiftValue => {
     const key = `${empId}_${date}`
     if (pending[key] !== undefined) return pending[key]
     const assigned = assignedMap[key]
@@ -100,8 +154,7 @@ export default function ShiftsPage() {
   }
 
   const setCell = (empId: string, date: string, value: ShiftValue) => {
-    const key = `${empId}_${date}`
-    setPending(p => ({ ...p, [key]: value }))
+    setPending(p => ({ ...p, [`${empId}_${date}`]: value }))
   }
 
   const hasChanges = Object.keys(pending).length > 0
@@ -130,16 +183,10 @@ export default function ShiftsPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-[#111110] flex items-center gap-2">
-            <IconCalendarTime size={20} className="text-[#1D9E75]" />
-            กะการทำงาน
-          </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            กำหนดกะของพนักงานรายวัน — ค่าว่างจะใช้กะเริ่มต้นของพนักงานคนนั้น
-          </p>
+    <>
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <div className="text-sm text-gray-600">
+          สัปดาห์ {week[0].format('D MMM')} – {week[6].format('D MMM YYYY')}
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setAnchor(a => a.subtract(7, 'day'))} className="btn text-xs px-2 py-2">
@@ -150,11 +197,6 @@ export default function ShiftsPage() {
             <IconChevronRight size={14} />
           </button>
         </div>
-      </div>
-
-      {/* Week label */}
-      <div className="mb-3 text-sm text-gray-600">
-        สัปดาห์ {week[0].format('D MMM')} – {week[6].format('D MMM YYYY')}
       </div>
 
       {msg.text && (
@@ -232,7 +274,7 @@ export default function ShiftsPage() {
                 </td>
                 {week.map((d, i) => {
                   const dateStr = d.format('YYYY-MM-DD')
-                  const value = cellValue(emp.id, dateStr, emp.shift_type)
+                  const value = cellValue(emp.id, dateStr)
                   const isPending = pending[`${emp.id}_${dateStr}`] !== undefined
                   const isWeekend = d.day() === 0 || d.day() === 6
                   return (
@@ -244,8 +286,7 @@ export default function ShiftsPage() {
                         className={clsx(
                           'w-full text-[11px] px-1.5 py-1 rounded-md border transition-all cursor-pointer',
                           isPending ? 'border-[#1D9E75] ring-1 ring-[#1D9E75]/30' : 'border-black/[0.08]',
-                          value === 'default' ? 'bg-gray-50 text-gray-500' :
-                            'text-[#111110]'
+                          value === 'default' ? 'bg-gray-50 text-gray-500' : 'text-[#111110]'
                         )}
                         style={value !== 'default' ? {
                           background: SHIFT_META[value]?.bg,
@@ -282,6 +323,6 @@ export default function ShiftsPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }

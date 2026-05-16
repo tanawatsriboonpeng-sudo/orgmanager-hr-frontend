@@ -147,6 +147,52 @@ export const shiftApi = {
   delete: (id: string) => api.delete(`/shifts/${id}`),
 }
 
+// Shift Config (rules) APIs
+export interface FlexTier {
+  checkin_until: string  // "HH:MM" — last allowed check-in time for this tier
+  checkout: string       // "HH:MM" — required check-out time
+  label?: string
+}
+export interface ShiftConfig {
+  id: string
+  name: string
+  shift_type: 'normal' | 'flexible' | string
+  description?: string
+  work_days: number[]
+  checkin_start: string
+  checkin_end: string
+  work_start: string
+  work_end: string
+  grace_minutes: number
+  late_warning_minutes: number
+  late_threshold_minutes: number
+  absent_threshold_minutes: number
+  flex_tiers: FlexTier[]
+  is_active: boolean
+}
+export interface ShiftConfigUpsert {
+  name?: string
+  shiftType?: 'normal' | 'flexible'
+  description?: string
+  workDays?: number[]
+  checkinStart?: string
+  checkinEnd?: string
+  workStart?: string
+  workEnd?: string
+  graceMinutes?: number
+  lateWarningMinutes?: number
+  lateThresholdMinutes?: number
+  absentThresholdMinutes?: number
+  flexTiers?: FlexTier[]
+  isActive?: boolean
+}
+export const shiftConfigApi = {
+  list: () => api.get('/shift-configs'),
+  create: (data: ShiftConfigUpsert) => api.post('/shift-configs', data),
+  update: (id: string, data: ShiftConfigUpsert) => api.patch(`/shift-configs/${id}`, data),
+  delete: (id: string) => api.delete(`/shift-configs/${id}`),
+}
+
 // Holiday APIs
 export const holidayApi = {
   list: (year?: number) => api.get('/holidays', { params: { year } }),
