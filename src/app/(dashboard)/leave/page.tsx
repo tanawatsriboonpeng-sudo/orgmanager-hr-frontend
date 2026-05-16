@@ -1,8 +1,11 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { leaveApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
-import { IconPlus, IconCheck, IconX } from '@tabler/icons-react'
+import {
+  IconPlus, IconCheck, IconX, IconCalendarOff,
+  IconUserCheck, IconUserX, IconTrash, IconAlertCircle,
+} from '@tabler/icons-react'
 import dayjs from 'dayjs'
 import clsx from 'clsx'
 import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
@@ -13,18 +16,50 @@ const STATUS_BADGE: Record<string, string> = {
 const STATUS_TH: Record<string, string> = {
   pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธ', cancelled: 'ยกเลิก',
 }
+type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'cancelled'
+
+const todayISO = () => dayjs().format('YYYY-MM-DD')
+
+/** Count working days (Mon–Fri) inclusive. Mirrors backend logic. */
+function countWorkingDays(startISO: string, endISO: string): number {
+  if (!startISO || !endISO) return 0
+  const start = dayjs(startISO)
+  const end = dayjs(endISO)
+  if (!start.isValid() || !end.isValid() || end.isBefore(start)) return 0
+  let n = 0
+  let cur = start
+  while (!cur.isAfter(end)) {
+    const dow = cur.day()
+    if (dow !== 0 && dow !== 6) n++
+    cur = cur.add(1, 'day')
+  }
+  return n
+}
 
 export default function LeavePage() {
   const { user } = useAuthStore()
+  const role = user?.role
+  const canSeePending = role === 'hr' || role === 'owner'
+
   const [types, setTypes] = useState<any[]>([])
   const [quota, setQuota] = useState<any[]>([])
   const [history, setHistory] = useState<any[]>([])
   const [pending, setPending] = useState<any[]>([])
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+
   const [form, setForm] = useState({ leaveTypeId: '', startDate: '', endDate: '', reason: '' })
   const [showForm, setShowForm] = useState(false)
-  const [msg, setMsg] = useState('')
-  const [loading, setLoading] = useState(false)
-  const isHR = user?.role === 'hr'
+  const [formMsg, setFormMsg] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  // Page-level toast (separate from in-form message so they don't trample
+  // each other when both events happen close together).
+  const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null)
+
+  // Inline reject form: which pending row, and its reason text.
+  const [rejectingId, setRejectingId] = useState<string | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const [actingId, setActingId] = useState<string | null>(null)
 
   const load = async () => {
     const [typesRes, quotaRes, histRes] = await Promise.allSettled([
@@ -33,7 +68,7 @@ export default function LeavePage() {
     if (typesRes.status === 'fulfilled') setTypes(typesRes.value.data.data || [])
     if (quotaRes.status === 'fulfilled') setQuota(quotaRes.value.data.data || [])
     if (histRes.status === 'fulfilled') setHistory(histRes.value.data.data || [])
-    if (isHR) {
+    if (canSeePending) {
       const pendRes = await leaveApi.pending().catch(() => null)
       if (pendRes) setPending(pendRes.data.data || [])
     }
@@ -41,70 +76,215 @@ export default function LeavePage() {
 
   useEffect(() => { load() }, [])
 
+  // Auto-dismiss success toasts; errors persist until next action.
+  useEffect(() => {
+    if (!toast || !toast.ok) return
+    const t = setTimeout(() => setToast(null), 3500)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  const flash = (text: string, ok = true) => setToast({ text, ok })
+
+  // Live day-count preview based on what the user has typed so far.
+  const previewDays = useMemo(
+    () => countWorkingDays(form.startDate, form.endDate),
+    [form.startDate, form.endDate]
+  )
+  const selectedQuota = quota.find(q => q.leave_type_id === form.leaveTypeId)
+  const quotaWarning = selectedQuota && previewDays > 0 && previewDays > selectedQuota.remaining_days
+  const datesInvalid = !!form.startDate && !!form.endDate && dayjs(form.endDate).isBefore(form.startDate)
+
+  const canSubmit = form.leaveTypeId && form.startDate && form.endDate && form.reason.trim()
+    && !datesInvalid && previewDays > 0 && !quotaWarning && !submitting
+
   const submit = async () => {
-    if (!form.leaveTypeId || !form.startDate || !form.endDate || !form.reason) {
-      setMsg('กรุณากรอกข้อมูลให้ครบ'); return
+    if (!canSubmit) {
+      if (!form.leaveTypeId || !form.startDate || !form.endDate || !form.reason.trim()) {
+        setFormMsg('กรุณากรอกข้อมูลให้ครบ')
+      } else if (datesInvalid) {
+        setFormMsg('วันสิ้นสุดต้องไม่ก่อนวันเริ่มลา')
+      } else if (previewDays === 0) {
+        setFormMsg('ช่วงวันที่เลือกไม่มีวันทำงาน (ส.-อา. ไม่นับ)')
+      } else if (quotaWarning) {
+        setFormMsg(`วันลาไม่พอ — คงเหลือ ${selectedQuota?.remaining_days} วัน แต่ขอ ${previewDays} วัน`)
+      }
+      return
     }
-    setLoading(true); setMsg('')
+    setSubmitting(true); setFormMsg('')
     try {
       await leaveApi.create(form)
-      setMsg('ยื่นคำขอลาแล้ว รออนุมัติ')
+      flash(`ยื่นคำขอลา ${previewDays} วัน เรียบร้อย รออนุมัติ`)
       setShowForm(false)
       setForm({ leaveTypeId: '', startDate: '', endDate: '', reason: '' })
       load()
     } catch (e: any) {
-      setMsg(e.response?.data?.message || 'เกิดข้อผิดพลาด')
-    } finally { setLoading(false) }
+      setFormMsg(e.response?.data?.message || 'เกิดข้อผิดพลาด')
+    } finally { setSubmitting(false) }
   }
 
-  const approve = async (id: string, action: 'approved' | 'rejected') => {
-    await leaveApi.approve(id, action).catch(() => {})
-    load()
+  const approve = async (id: string) => {
+    setActingId(id)
+    try {
+      await leaveApi.approve(id, 'approved')
+      flash('อนุมัติคำขอลาแล้ว')
+      load()
+    } catch (e: any) {
+      flash(e.response?.data?.message || 'อนุมัติไม่สำเร็จ', false)
+    } finally { setActingId(null) }
   }
+
+  const startReject = (id: string) => {
+    setRejectingId(id)
+    setRejectReason('')
+  }
+  const confirmReject = async (id: string) => {
+    setActingId(id)
+    try {
+      await leaveApi.approve(id, 'rejected', rejectReason.trim() || undefined)
+      flash('ปฏิเสธคำขอลาแล้ว')
+      setRejectingId(null)
+      setRejectReason('')
+      load()
+    } catch (e: any) {
+      flash(e.response?.data?.message || 'ปฏิเสธไม่สำเร็จ', false)
+    } finally { setActingId(null) }
+  }
+
+  const cancelOwn = async (id: string) => {
+    if (!confirm('ยกเลิกคำขอลานี้?')) return
+    setActingId(id)
+    try {
+      await leaveApi.cancel(id)
+      flash('ยกเลิกคำขอลาแล้ว')
+      load()
+    } catch (e: any) {
+      flash(e.response?.data?.message || 'ยกเลิกไม่สำเร็จ', false)
+    } finally { setActingId(null) }
+  }
+
+  const filteredHistory = useMemo(() => {
+    if (statusFilter === 'all') return history
+    return history.filter(h => h.status === statusFilter)
+  }, [history, statusFilter])
+
+  const historyCounts = useMemo(() => {
+    const c: Record<StatusFilter, number> = { all: history.length, pending: 0, approved: 0, rejected: 0, cancelled: 0 }
+    for (const h of history) c[h.status as StatusFilter] = (c[h.status as StatusFilter] || 0) + 1
+    return c
+  }, [history])
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-6 max-w-6xl mx-auto">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-semibold text-[#111110]">การลา</h1>
           <p className="text-sm text-gray-500 mt-0.5">จัดการคำขอลาและโควตา</p>
         </div>
-        <button onClick={() => setShowForm(!showForm)} className="btn btn-primary text-sm">
-          <IconPlus size={15} /> ยื่นคำขอลา
+        <button
+          onClick={() => { setShowForm(s => !s); setFormMsg('') }}
+          className="btn btn-primary text-sm"
+        >
+          <IconPlus size={15} /> {showForm ? 'ปิดฟอร์ม' : 'ยื่นคำขอลา'}
         </button>
       </div>
 
+      {/* Page-level toast */}
+      {toast && (
+        <div className={clsx(
+          'mb-4 px-3 py-2 rounded-[10px] text-sm flex items-center gap-2',
+          toast.ok ? 'bg-[#E1F5EE] text-[#085041]' : 'bg-red-50 text-red-600'
+        )}>
+          {toast.ok ? <IconCheck size={14} /> : <IconAlertCircle size={14} />}
+          <span className="flex-1">{toast.text}</span>
+          <button onClick={() => setToast(null)} aria-label="ปิด"><IconX size={13} /></button>
+        </div>
+      )}
+
       {/* Form */}
       {showForm && (
-        <div className="card mb-5 animate-slide-up">
+        <div className="card mb-5">
           <h2 className="text-sm font-semibold mb-4">ยื่นคำขอลาใหม่</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
+            <div className="sm:col-span-2">
               <label className="label">ประเภทการลา</label>
-              <select className="input" value={form.leaveTypeId} onChange={e => setForm(p => ({ ...p, leaveTypeId: e.target.value }))}>
-                <option value="">เลือกประเภท</option>
-                {types.map(t => <option key={t.id} value={t.id}>{t.name} ({quota.find(q => q.leave_type_id === t.id)?.remaining_days ?? '?'} วันคงเหลือ)</option>)}
+              <select className="input" value={form.leaveTypeId}
+                onChange={e => setForm(p => ({ ...p, leaveTypeId: e.target.value }))}>
+                <option value="">— เลือกประเภท —</option>
+                {types.map(t => {
+                  const q = quota.find(q => q.leave_type_id === t.id)
+                  const remain = q?.remaining_days
+                  const total = q?.total_days ?? t.days_per_year
+                  return (
+                    <option key={t.id} value={t.id}>
+                      {t.name} {q ? `(คงเหลือ ${remain}/${total} วัน)` : `(${total} วัน/ปี)`}
+                    </option>
+                  )
+                })}
               </select>
             </div>
             <div>
               <label className="label">วันเริ่มลา</label>
-              <input type="date" className="input" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))} />
+              <input
+                type="date"
+                className="input"
+                min={todayISO()}
+                value={form.startDate}
+                onChange={e => setForm(p => ({
+                  ...p,
+                  startDate: e.target.value,
+                  // Auto-bump endDate if it ends up before the new start
+                  endDate: p.endDate && dayjs(p.endDate).isBefore(e.target.value) ? e.target.value : p.endDate,
+                }))}
+              />
             </div>
             <div>
               <label className="label">วันสิ้นสุด</label>
-              <input type="date" className="input" value={form.endDate} onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))} />
+              <input
+                type="date"
+                className="input"
+                min={form.startDate || todayISO()}
+                value={form.endDate}
+                onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))}
+              />
             </div>
-            <div>
+            <div className="sm:col-span-2">
               <label className="label">เหตุผล</label>
-              <input className="input" placeholder="ระบุเหตุผล" value={form.reason} onChange={e => setForm(p => ({ ...p, reason: e.target.value }))} />
+              <input className="input" placeholder="ระบุเหตุผล (เช่น ลากิจส่วนตัว, ไปต่างจังหวัด)"
+                value={form.reason}
+                onChange={e => setForm(p => ({ ...p, reason: e.target.value }))} />
             </div>
           </div>
-          {msg && <p className={clsx('text-xs mt-3', msg.includes('แล้ว') ? 'text-[#085041]' : 'text-red-600')}>{msg}</p>}
+
+          {/* Day preview / warnings */}
+          {(form.startDate && form.endDate) && (
+            <div className={clsx(
+              'mt-3 px-3 py-2 rounded-[10px] text-xs flex items-center gap-2',
+              datesInvalid || quotaWarning
+                ? 'bg-red-50 text-red-700'
+                : previewDays === 0
+                  ? 'bg-[#FAEEDA] text-[#633806]'
+                  : 'bg-[#E6F1FB] text-[#0C447C]'
+            )}>
+              {datesInvalid
+                ? <>วันสิ้นสุดอยู่ก่อนวันเริ่มลา</>
+                : previewDays === 0
+                  ? <>ช่วงนี้ไม่มีวันทำงาน (เสาร์-อาทิตย์ไม่นับเป็นวันลา)</>
+                  : quotaWarning
+                    ? <>วันลาไม่พอ — คงเหลือ {selectedQuota?.remaining_days} วัน แต่ขอ {previewDays} วัน</>
+                    : <>ขอลา <strong>{previewDays} วัน</strong> {selectedQuota && <>· จะเหลือ {selectedQuota.remaining_days - previewDays}/{selectedQuota.total_days} วัน</>}</>
+              }
+            </div>
+          )}
+
+          {formMsg && (
+            <p className="text-xs mt-3 text-red-600">{formMsg}</p>
+          )}
+
           <div className="flex gap-2 mt-4">
-            <button onClick={submit} disabled={loading} className="btn btn-primary text-sm">
-              {loading ? 'กำลังส่ง...' : 'ส่งคำขอ'}
+            <button onClick={submit} disabled={!canSubmit} className="btn btn-primary text-sm">
+              {submitting ? 'กำลังส่ง…' : 'ส่งคำขอ'}
             </button>
-            <button onClick={() => setShowForm(false)} className="btn text-sm">ยกเลิก</button>
+            <button onClick={() => { setShowForm(false); setFormMsg('') }} className="btn text-sm">ยกเลิก</button>
           </div>
         </div>
       )}
@@ -112,68 +292,208 @@ export default function LeavePage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Quota */}
         <div className="card">
-          <h2 className="text-sm font-semibold mb-3">วันลาคงเหลือปีนี้</h2>
+          <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
+            <IconCalendarOff size={14} className="text-gray-400" />
+            วันลาคงเหลือปีนี้
+          </h2>
           {quota.length === 0
             ? <p className="text-xs text-gray-400">ยังไม่มีข้อมูลโควตา</p>
             : quota.map((q: any) => {
-                const pct = Math.round(q.used_days / q.total_days * 100)
+                const pct = q.total_days > 0 ? Math.round(q.used_days / q.total_days * 100) : 0
                 return (
                   <div key={q.id} className="mb-3 last:mb-0">
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-gray-700">{q.leave_type_name}</span>
-                      <span className="font-medium">{q.remaining_days}/{q.total_days} วัน</span>
+                      <span className="font-medium tabular-nums">{q.remaining_days}/{q.total_days} วัน</span>
                     </div>
                     <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: pct > 80 ? '#E24B4A' : '#1D9E75' }} />
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${pct}%`, background: pct > 80 ? '#E24B4A' : pct > 50 ? '#D9914A' : '#1D9E75' }}
+                      />
                     </div>
                   </div>
                 )
               })}
         </div>
 
-        {/* Pending (HR) */}
-        {isHR && (
+        {/* Pending (HR/owner) */}
+        {canSeePending && (
           <div className="card lg:col-span-2">
-            <h2 className="text-sm font-semibold mb-3">รออนุมัติ ({pending.length})</h2>
+            <h2 className="text-sm font-semibold mb-3 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <IconUserCheck size={14} className="text-gray-400" />
+                รออนุมัติ
+              </span>
+              {pending.length > 0 && <span className="text-xs text-gray-400">{pending.length} รายการ</span>}
+            </h2>
             {pending.length === 0
-              ? <p className="text-xs text-gray-400 py-4 text-center">ไม่มีคำขอรออนุมัติ</p>
-              : pending.map((r: any) => (
-                  <div key={r.id} className="flex items-center gap-3 py-2.5 border-b border-black/[0.05] last:border-0">
-                    <EmployeeAvatar person={r} size={32} />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-[#111110]">{r.first_name} {r.last_name}</div>
-                      <div className="text-xs text-gray-500">{r.leave_type_name} · {dayjs(r.start_date).format('D MMM')}–{dayjs(r.end_date).format('D MMM')} ({r.days_count} วัน)</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{r.reason}</div>
+              ? <p className="text-xs text-gray-400 py-6 text-center">ไม่มีคำขอรออนุมัติ</p>
+              : <div className="divide-y divide-black/[0.05]">
+                  {pending.map((r: any) => (
+                    <div key={r.id} className="py-3">
+                      <div className="flex items-start gap-3">
+                        <EmployeeAvatar person={r} size={32} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-[#111110] truncate">
+                            {r.first_name} {r.last_name}
+                            {r.nickname && <span className="text-gray-400 font-normal ml-1">({r.nickname})</span>}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            <span className="badge badge-blue mr-1.5" style={{ fontSize: 10 }}>{r.leave_type_name}</span>
+                            {dayjs(r.start_date).format('D MMM')}–{dayjs(r.end_date).format('D MMM YY')}
+                            <span className="text-gray-700 font-medium ml-1">· {r.days_count} วัน</span>
+                          </div>
+                          {r.reason && (
+                            <div className="text-xs text-gray-500 mt-1 break-words">เหตุผล: {r.reason}</div>
+                          )}
+                        </div>
+                        <div className="flex gap-1.5 flex-shrink-0">
+                          <button
+                            onClick={() => startReject(r.id)}
+                            disabled={actingId === r.id}
+                            className="btn text-xs px-2.5 py-1.5 text-red-500 border-red-200 hover:bg-red-50"
+                            title="ปฏิเสธ"
+                          >
+                            <IconX size={13} />
+                          </button>
+                          <button
+                            onClick={() => approve(r.id)}
+                            disabled={actingId === r.id}
+                            className="btn btn-primary text-xs px-2.5 py-1.5"
+                            title="อนุมัติ"
+                          >
+                            <IconCheck size={13} />
+                          </button>
+                        </div>
+                      </div>
+                      {rejectingId === r.id && (
+                        <div className="mt-3 ml-11 p-3 rounded-[10px] bg-red-50/40 border border-red-100">
+                          <label className="block text-[11px] font-medium text-red-700 mb-1.5">
+                            เหตุผลที่ปฏิเสธ (ไม่บังคับ)
+                          </label>
+                          <textarea
+                            className="input text-xs min-h-[50px]"
+                            placeholder="เช่น ช่วงนี้งานเร่ง / ขอเลื่อนเป็นสัปดาห์หน้า"
+                            value={rejectReason}
+                            onChange={e => setRejectReason(e.target.value)}
+                            autoFocus
+                          />
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              onClick={() => confirmReject(r.id)}
+                              disabled={actingId === r.id}
+                              className="btn text-xs text-red-600 border-red-200 hover:bg-red-50"
+                            >
+                              {actingId === r.id ? 'กำลังบันทึก…' : 'ยืนยันปฏิเสธ'}
+                            </button>
+                            <button
+                              onClick={() => { setRejectingId(null); setRejectReason('') }}
+                              className="btn text-xs"
+                            >
+                              ยกเลิก
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex gap-1.5">
-                      <button onClick={() => approve(r.id, 'rejected')} className="btn text-xs px-2.5 py-1.5 text-red-500 border-red-200 hover:bg-red-50">
-                        <IconX size={13} />
-                      </button>
-                      <button onClick={() => approve(r.id, 'approved')} className="btn btn-primary text-xs px-2.5 py-1.5">
-                        <IconCheck size={13} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>}
           </div>
         )}
 
         {/* History */}
-        <div className={clsx('card', !isHR && 'lg:col-span-2')}>
-          <h2 className="text-sm font-semibold mb-3">ประวัติการลา</h2>
-          {history.length === 0
-            ? <p className="text-xs text-gray-400 py-4 text-center">ยังไม่มีประวัติ</p>
-            : history.map((r: any) => (
-                <div key={r.id} className="flex items-center gap-3 py-2.5 border-b border-black/[0.05] last:border-0">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-[#111110]">{r.leave_type_name}</div>
-                    <div className="text-xs text-gray-500">{dayjs(r.start_date).format('D MMM')}–{dayjs(r.end_date).format('D MMM YY')} · {r.days_count} วัน</div>
-                  </div>
-                  <span className={clsx('badge', STATUS_BADGE[r.status] || 'badge-gray')}>
-                    {STATUS_TH[r.status] || r.status}
-                  </span>
-                </div>
-              ))}
+        <div className={clsx('card', !canSeePending && 'lg:col-span-2')}>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <IconCalendarOff size={14} className="text-gray-400" />
+              ประวัติการลา
+            </h2>
+          </div>
+
+          {/* Status filter chips */}
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {(['all','pending','approved','rejected','cancelled'] as StatusFilter[]).map(s => {
+              const active = statusFilter === s
+              const count = historyCounts[s] || 0
+              return (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  disabled={s !== 'all' && count === 0}
+                  className={clsx(
+                    'text-[11px] px-2.5 py-1 rounded-full border transition-colors',
+                    active
+                      ? 'bg-[#111110] text-white border-[#111110]'
+                      : count === 0 && s !== 'all'
+                        ? 'bg-gray-50 text-gray-300 border-transparent cursor-not-allowed'
+                        : 'bg-white text-gray-600 border-black/[0.08] hover:bg-gray-50'
+                  )}
+                >
+                  {s === 'all' ? 'ทั้งหมด' : STATUS_TH[s]} {count > 0 && <span className={clsx('ml-1', active ? 'opacity-70' : 'text-gray-400')}>{count}</span>}
+                </button>
+              )
+            })}
+          </div>
+
+          {filteredHistory.length === 0
+            ? <p className="text-xs text-gray-400 py-6 text-center">
+                {history.length === 0 ? 'ยังไม่มีประวัติการลา' : 'ไม่มีรายการในสถานะนี้'}
+              </p>
+            : <div className="divide-y divide-black/[0.05]">
+                {filteredHistory.map((r: any) => {
+                  const isPending = r.status === 'pending'
+                  const isRejected = r.status === 'rejected'
+                  const isApproved = r.status === 'approved'
+                  const approverName = r.approver_first_name
+                    ? `${r.approver_first_name}${r.approver_last_name ? ' ' + r.approver_last_name : ''}`
+                    : null
+                  return (
+                    <div key={r.id} className="py-2.5">
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm text-[#111110]">{r.leave_type_name}</span>
+                            <span className={clsx('badge flex-shrink-0', STATUS_BADGE[r.status] || 'badge-gray')}>
+                              {STATUS_TH[r.status] || r.status}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            {dayjs(r.start_date).format('D MMM')}–{dayjs(r.end_date).format('D MMM YY')} · {r.days_count} วัน
+                          </div>
+                        </div>
+                        {isPending && (
+                          <button
+                            onClick={() => cancelOwn(r.id)}
+                            disabled={actingId === r.id}
+                            className="btn text-xs px-2 py-1 text-gray-500 hover:text-red-600 hover:bg-red-50 hover:border-red-200"
+                            title="ยกเลิกคำขอ"
+                          >
+                            <IconTrash size={12} />
+                          </button>
+                        )}
+                      </div>
+                      {(isApproved || isRejected) && (approverName || r.hr_notes) && (
+                        <div className="text-[11px] text-gray-400 mt-1 ml-0.5">
+                          {isApproved && approverName && <>อนุมัติโดย {approverName}</>}
+                          {isRejected && (
+                            <>
+                              <span className="inline-flex items-center gap-1 text-red-500">
+                                <IconUserX size={11} /> ปฏิเสธ
+                              </span>
+                              {approverName && <> โดย {approverName}</>}
+                              {r.hr_notes && <span className="text-gray-500"> · "{r.hr_notes}"</span>}
+                            </>
+                          )}
+                        </div>
+                      )}
+                      {r.reason && (
+                        <div className="text-[11px] text-gray-400 mt-0.5 truncate">เหตุผล: {r.reason}</div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>}
         </div>
       </div>
     </div>

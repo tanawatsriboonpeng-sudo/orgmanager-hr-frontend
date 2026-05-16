@@ -72,6 +72,7 @@ export const leaveApi = {
   myHistory: () => api.get('/leave/my-history'),
   create: (data: { leaveTypeId: string; startDate: string; endDate: string; reason: string }) =>
     api.post('/leave/request', data),
+  cancel: (id: string) => api.post(`/leave/${id}/cancel`),
   pending: () => api.get('/leave/pending'),
   approve: (id: string, action: 'approved' | 'rejected', hrNotes?: string) =>
     api.patch(`/leave/${id}/approve`, { action, hrNotes }),
