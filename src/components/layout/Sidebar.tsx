@@ -6,15 +6,17 @@ import { useState, useEffect } from 'react'
 import {
   IconLayoutDashboard, IconClock, IconCalendarOff,
   IconClockPlus, IconReceipt2, IconChartBar,
-  IconClipboardList, IconCash, IconSparkles,
-  IconSpeakerphone, IconHierarchy, IconUserSearch,
-  IconBuilding, IconLogout, IconChevronRight,
-  IconSettings, IconCrown, IconUsers, IconUser, IconKey,
+  IconClipboardList,
+  IconSpeakerphone, IconHierarchy, IconHistory,
+  IconLogout, IconChevronRight,
+  IconSettings, IconCrown, IconUsers, IconUser,
   IconMenu2, IconX, IconCalendarTime
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
 
+// Removed dead links: /finance, /cleaning, /recruit — the pages were
+// deleted earlier but the sidebar still pointed at them, producing 404s.
 const ROLE_MENUS = {
   owner: [
     // Owner ดูภาพรวม/อนุมัติ/จัดการเท่านั้น ไม่ลงเวลา ไม่ขอ OT ไม่มีกะ
@@ -24,10 +26,10 @@ const ROLE_MENUS = {
     { href: '/payroll', icon: IconReceipt2, label: 'เงินเดือน' },
     { href: '/kpi', icon: IconChartBar, label: 'KPI' },
     { href: '/projects', icon: IconClipboardList, label: 'โปรเจกต์' },
-    { href: '/finance', icon: IconCash, label: 'การเงิน' },
     { href: '/announcements', icon: IconSpeakerphone, label: 'ประกาศ' },
     { href: '/employees', icon: IconUsers, label: 'พนักงาน' },
     { href: '/org-chart', icon: IconHierarchy, label: 'แผนผัง' },
+    { href: '/audit-logs', icon: IconHistory, label: 'ประวัติการดำเนินการ' },
   ],
   hr: [
     { href: '/dashboard', icon: IconLayoutDashboard, label: 'ภาพรวม' },
@@ -38,10 +40,7 @@ const ROLE_MENUS = {
     { href: '/payroll', icon: IconReceipt2, label: 'เงินเดือน' },
     { href: '/kpi', icon: IconChartBar, label: 'KPI' },
     { href: '/employees', icon: IconUsers, label: 'พนักงาน' },
-    { href: '/recruit', icon: IconUserSearch, label: 'สรรหา' },
     { href: '/projects', icon: IconClipboardList, label: 'โปรเจกต์' },
-    { href: '/finance', icon: IconCash, label: 'การเงิน' },
-    { href: '/cleaning', icon: IconSparkles, label: 'ทำความสะอาด' },
     { href: '/announcements', icon: IconSpeakerphone, label: 'ประกาศ' },
   ],
   employee: [
@@ -51,7 +50,6 @@ const ROLE_MENUS = {
     { href: '/ot', icon: IconClockPlus, label: 'OT' },
     { href: '/payroll', icon: IconReceipt2, label: 'สลิป' },
     { href: '/projects', icon: IconClipboardList, label: 'โปรเจกต์' },
-    { href: '/cleaning', icon: IconSparkles, label: 'ทำความสะอาด' },
     { href: '/announcements', icon: IconSpeakerphone, label: 'ประกาศ' },
   ],
 }

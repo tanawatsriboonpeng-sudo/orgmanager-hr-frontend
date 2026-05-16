@@ -19,10 +19,10 @@ export const config = {
     '/payroll/:path*',
     '/kpi/:path*',
     '/projects/:path*',
-    '/finance/:path*',
     '/announcements/:path*',
     '/employees/:path*',
     '/org-chart/:path*',
+    '/audit-logs/:path*',
     '/settings/:path*',
   ],
 }

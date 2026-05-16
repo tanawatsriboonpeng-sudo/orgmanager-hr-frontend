@@ -428,8 +428,33 @@ export const orgApi = {
 }
 
 // Audit Log APIs
+export interface AuditLog {
+  id: string
+  user_id: string | null
+  action: string
+  resource: string | null
+  resource_id: string | null
+  details: any
+  ip_address: string | null
+  device_info: string | null
+  created_at: string
+  email?: string | null
+  role?: string | null
+  user_name?: string | null
+  user_nickname?: string | null
+  user_avatar?: string | null
+}
+export interface AuditLogParams {
+  action?: string
+  resource?: string
+  userId?: string
+  from?: string  // ISO timestamp
+  to?: string    // ISO timestamp
+  limit?: number
+  offset?: number
+}
 export const auditApi = {
-  list: () => api.get('/audit-logs'),
+  list: (params?: AuditLogParams) => api.get('/audit-logs', { params }),
 }
 
 export default api
