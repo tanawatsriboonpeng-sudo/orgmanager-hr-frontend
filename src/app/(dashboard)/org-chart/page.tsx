@@ -91,12 +91,16 @@ function PersonCard({
   canEdit,
   onEdit,
   manager,
+  showDept,
 }: {
   emp: Employee
   large?: boolean
   canEdit?: boolean
   onEdit?: (emp: Employee) => void
   manager?: Employee | null
+  /** Show department name as a small subtitle line (used in owner cards
+   *  so HR can see where the owner sits in the org). */
+  showDept?: boolean
 }) {
   return (
     <div className={clsx(
@@ -107,32 +111,41 @@ function PersonCard({
       large && 'p-4'
     )}>
       <Avatar emp={emp} size={large ? 48 : 36} />
+      {/* min-w-0 on this flex item lets the truncate inside actually clip
+          instead of overflowing the card and chopping mid-paren. */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <div className={clsx('font-medium text-[#111110] truncate', large ? 'text-base' : 'text-sm')}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          {/* Single truncate target containing the whole "ชื่อ นามสกุล
+              (ชื่อเล่น)" string, so the ellipsis lands at the end of the
+              full unit, not in the middle of the parenthesised nickname. */}
+          <div className={clsx('font-medium text-[#111110] truncate min-w-0', large ? 'text-base' : 'text-sm')}>
             {emp.first_name} {emp.last_name}
-            {emp.nickname && (
-              <span className="text-gray-400 font-normal ml-1">({emp.nickname})</span>
-            )}
+            {emp.nickname && <span className="text-gray-400 font-normal"> ({emp.nickname})</span>}
           </div>
-          <span className={clsx('badge', ROLE_BADGE[emp.role] || 'badge-gray')} style={large ? undefined : { fontSize: 10 }}>
+          <span className={clsx('badge flex-shrink-0', ROLE_BADGE[emp.role] || 'badge-gray')} style={large ? undefined : { fontSize: 10 }}>
             {ROLE_TH[emp.role] || emp.role}
           </span>
           {emp.is_active === false && (
-            <span className="badge badge-gray inline-flex items-center gap-1" style={{ fontSize: 10 }}>
+            <span className="badge badge-gray inline-flex items-center gap-1 flex-shrink-0" style={{ fontSize: 10 }}>
               <IconCircleOff size={10} />
               ระงับ
             </span>
           )}
         </div>
         {emp.position && (
-          <div className={clsx('text-gray-500 mt-0.5', large ? 'text-sm' : 'text-xs')}>
+          <div className={clsx('text-gray-500 mt-0.5 truncate', large ? 'text-sm' : 'text-xs')}>
             {emp.position}
           </div>
         )}
+        {showDept && emp.department_name && (
+          <div className="text-[11px] text-gray-400 mt-0.5 inline-flex items-center gap-1 truncate">
+            <IconBuilding size={11} className="flex-shrink-0" />
+            {emp.department_name}
+          </div>
+        )}
         {manager && (
-          <div className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-1">
-            <IconUserCircle size={10} />
+          <div className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-1 truncate">
+            <IconUserCircle size={10} className="flex-shrink-0" />
             ภายใต้ {manager.first_name} {manager.last_name}
           </div>
         )}
@@ -400,11 +413,13 @@ function EditModal({
 
 function DepartmentPanel({
   departments,
+  employees,
   isOwner,
   isHR,
   onChanged,
 }: {
   departments: Department[]
+  employees: Employee[]
   isOwner: boolean
   isHR: boolean
   onChanged: () => void
@@ -516,36 +531,70 @@ function DepartmentPanel({
         <p className="text-xs text-gray-400 text-center py-3">ยังไม่มีแผนก — เพิ่มแผนกแรกได้เลย</p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {departments.map(d => (
-            <div key={d.id} className="group flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] bg-gray-50 border border-black/[0.04]">
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium text-[#111110] truncate">{d.name}</div>
-                <div className="text-[10px] text-gray-400">{d.member_count || 0} คน</div>
-              </div>
-              <button
-                onClick={() => startEdit(d)}
-                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-[6px] text-gray-400 hover:bg-gray-100 hover:text-[#1D9E75]"
-                title="แก้ไขแผนก"
+          {departments.map(d => {
+            // Derive counts from the actual employee list so the panel
+            // reflects what's drawn on the chart below. Owners are pulled
+            // up into the "ผู้บริหาร" section, so a dept whose only
+            // members are owners won't get a card — flag that here so HR
+            // isn't left wondering why the count doesn't show up below.
+            const members = employees.filter(e => e.department_name === d.name && e.is_active !== false)
+            const owners = members.filter(e => e.role === 'owner').length
+            const nonOwners = members.length - owners
+            const isEmpty = members.length === 0
+            const ownersOnly = members.length > 0 && nonOwners === 0
+            return (
+              <div
+                key={d.id}
+                className={clsx(
+                  'group flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] border',
+                  isEmpty
+                    ? 'bg-white border-dashed border-black/[0.08]'
+                    : 'bg-gray-50 border-black/[0.04]'
+                )}
               >
-                <IconEdit size={12} />
-              </button>
-              {isOwner && (
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium text-[#111110] truncate">{d.name}</div>
+                  <div className="text-[10px] text-gray-400 truncate">
+                    {isEmpty
+                      ? <span className="italic">ไม่มีพนักงาน</span>
+                      : ownersOnly
+                        ? <>เจ้าของ {owners} (ในส่วนผู้บริหาร)</>
+                        : <>
+                            {members.length} คน
+                            {owners > 0 && <> · เจ้าของ {owners}</>}
+                          </>
+                    }
+                  </div>
+                </div>
                 <button
-                  onClick={() => remove(d)}
-                  disabled={(d.member_count || 0) > 0}
-                  className={clsx(
-                    'p-1 rounded-[6px] transition-colors',
-                    (d.member_count || 0) > 0
-                      ? 'text-gray-300 cursor-not-allowed'
-                      : 'text-red-400 hover:bg-red-50 hover:text-red-600'
-                  )}
-                  title={(d.member_count || 0) > 0 ? 'ย้ายพนักงานออกก่อนจึงจะลบได้' : 'ลบแผนก'}
+                  onClick={() => startEdit(d)}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-[6px] text-gray-400 hover:bg-gray-100 hover:text-[#1D9E75]"
+                  title="แก้ไขแผนก"
                 >
-                  <IconTrash size={12} />
+                  <IconEdit size={12} />
                 </button>
-              )}
-            </div>
-          ))}
+                {isOwner && (
+                  <button
+                    onClick={() => remove(d)}
+                    disabled={members.length > 0}
+                    className={clsx(
+                      'p-1 rounded-[6px] transition-colors',
+                      members.length > 0
+                        ? 'text-gray-300 cursor-not-allowed'
+                        // Empty depts: keep the trash always visible so
+                        // HR can clean up stale entries in one click.
+                        : isEmpty
+                          ? 'text-red-400 hover:bg-red-50 hover:text-red-600'
+                          : 'text-red-400 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 hover:text-red-600'
+                    )}
+                    title={members.length > 0 ? 'ย้ายพนักงานออกก่อนจึงจะลบได้' : 'ลบแผนก'}
+                  >
+                    <IconTrash size={12} />
+                  </button>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -593,10 +642,13 @@ export default function OrgChartPage() {
     return m
   }, [employees])
 
+  const UNASSIGNED_LABEL = 'ไม่ระบุแผนก'
   const byDept = useMemo(() => {
     const groups: Record<string, Employee[]> = {}
     for (const emp of others) {
-      const dept = emp.department_name || 'ทั่วไป'
+      // Empty department_name groups under a distinct label that won't
+      // collide with a real dept literally named "ทั่วไป".
+      const dept = emp.department_name || UNASSIGNED_LABEL
       if (!groups[dept]) groups[dept] = []
       groups[dept].push(emp)
     }
@@ -629,8 +681,8 @@ export default function OrgChartPage() {
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
             {tab === 'employees'
-              ? <>พนักงาน {totalActive} คน · {departments.length} แผนก{totalInactive > 0 && <> · ระงับ {totalInactive} คน</>}{isHR && <> · <span className="text-[#1D9E75]">hover การ์ดเพื่อแก้ไข</span></>}</>
-              : <>โครงสร้างตำแหน่งงานแบบลำดับชั้น{isHR && <> · <span className="text-[#1D9E75]">hover แถวเพื่อเพิ่ม/แก้ไข/ลบ</span></>}</>
+              ? <>พนักงาน {totalActive} คน · {departments.length} แผนก{totalInactive > 0 && <> · ระงับ {totalInactive} คน</>}</>
+              : <>โครงสร้างตำแหน่งงานแบบลำดับชั้น</>
             }
           </p>
         </div>
@@ -681,6 +733,7 @@ export default function OrgChartPage() {
       {/* Department management */}
       <DepartmentPanel
         departments={departments}
+        employees={employees}
         isOwner={!!isOwner}
         isHR={!!isHR}
         onChanged={loadAll}
@@ -706,7 +759,7 @@ export default function OrgChartPage() {
                 {owners.map(emp => (
                   <div key={emp.id} className="rounded-[14px] border-2 p-1"
                     style={{ borderColor: '#EEEDFE', background: 'linear-gradient(135deg, #EEEDFE 0%, #FFFFFF 60%)' }}>
-                    <PersonCard emp={emp} large canEdit={isHR} onEdit={setEditingEmp} />
+                    <PersonCard emp={emp} large canEdit={isHR} onEdit={setEditingEmp} showDept />
                   </div>
                 ))}
               </div>
