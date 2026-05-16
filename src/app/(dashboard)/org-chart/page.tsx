@@ -137,16 +137,26 @@ function PersonCard({
           </div>
         )}
       </div>
-      {canEdit && onEdit && (
-        <button
-          onClick={() => onEdit(emp)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-[8px] hover:bg-gray-100 text-gray-500 hover:text-[#1D9E75]"
-          title="แก้ไข"
-          aria-label={`แก้ไข ${emp.first_name} ${emp.last_name}`}
+      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+        <a
+          href={`/employees/${emp.id}`}
+          className="p-1.5 rounded-[8px] hover:bg-gray-100 text-gray-500 hover:text-[#1D9E75]"
+          title="ดูข้อมูลเต็ม"
+          aria-label={`ดูข้อมูลเต็ม ${emp.first_name} ${emp.last_name}`}
         >
-          <IconEdit size={15} />
-        </button>
-      )}
+          <IconUserCircle size={15} />
+        </a>
+        {canEdit && onEdit && (
+          <button
+            onClick={() => onEdit(emp)}
+            className="p-1.5 rounded-[8px] hover:bg-gray-100 text-gray-500 hover:text-[#1D9E75]"
+            title="แก้ไขด่วน"
+            aria-label={`แก้ไขด่วน ${emp.first_name} ${emp.last_name}`}
+          >
+            <IconEdit size={15} />
+          </button>
+        )}
+      </div>
     </div>
   )
 }

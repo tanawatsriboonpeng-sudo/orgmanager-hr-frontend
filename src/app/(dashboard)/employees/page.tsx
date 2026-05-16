@@ -5,9 +5,11 @@ import { employeeApi } from '@/lib/api'
 import api from '@/lib/api'
 import {
   IconUserPlus, IconEdit, IconTrash, IconKey,
-  IconCheck, IconX, IconEye, IconEyeOff, IconSearch
+  IconCheck, IconX, IconEye, IconEyeOff, IconSearch,
+  IconUserCircle
 } from '@tabler/icons-react'
 import clsx from 'clsx'
+import Link from 'next/link'
 
 const ROLES = [
   { value: 'owner', label: 'เจ้าของ' },
@@ -312,7 +314,10 @@ export default function EmployeesPage() {
                 <tr key={emp.id} className="border-b border-black/[0.04] hover:bg-gray-50/60">
                   <td className="py-2.5 px-3 text-xs text-gray-500">{emp.employee_id}</td>
                   <td className="py-2.5 px-3">
-                    <div className="font-medium text-[#111110]">{emp.first_name} {emp.last_name}</div>
+                    <Link href={`/employees/${emp.id}`}
+                      className="font-medium text-[#111110] hover:text-[#1D9E75] hover:underline">
+                      {emp.first_name} {emp.last_name}
+                    </Link>
                   </td>
                   <td className="py-2.5 px-3 text-xs text-gray-500">{emp.email}</td>
                   <td className="py-2.5 px-3 text-xs">
@@ -331,9 +336,13 @@ export default function EmployeesPage() {
                   </td>
                   <td className="py-2.5 px-3">
                     <div className="flex gap-1.5">
+                      <Link href={`/employees/${emp.id}`}
+                        className="btn btn-ghost p-1.5 rounded-lg" title="ดูข้อมูลเต็ม">
+                        <IconUserCircle size={14} />
+                      </Link>
                       {isHR && (
                         <button onClick={() => handleEdit(emp)}
-                          className="btn btn-ghost p-1.5 rounded-lg" title="แก้ไข">
+                          className="btn btn-ghost p-1.5 rounded-lg" title="แก้ไขด่วน">
                           <IconEdit size={14} />
                         </button>
                       )}
