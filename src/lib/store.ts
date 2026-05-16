@@ -9,8 +9,11 @@ interface User {
   employeeId: string
   firstName?: string
   lastName?: string
+  first_name?: string  // backend uses snake_case in /auth/me
+  last_name?: string
   fullName?: string
   avatarUrl?: string
+  avatar_url?: string  // backend uses snake_case in /auth/me
   department?: string
   position?: string
 }

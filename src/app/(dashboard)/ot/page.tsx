@@ -5,6 +5,7 @@ import { useAuthStore } from '@/lib/store'
 import { IconPlus, IconCheck, IconX, IconClockPlus, IconCrown } from '@tabler/icons-react'
 import dayjs from 'dayjs'
 import clsx from 'clsx'
+import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
 
 const STATUS_BADGE: Record<string, string> = {
   pending: 'badge-amber', approved: 'badge-green', rejected: 'badge-red', cancelled: 'badge-gray',
@@ -167,6 +168,7 @@ export default function OTPage() {
           ) : (
             pending.map((r: any) => (
               <div key={r.id} className="flex items-center gap-3 py-2.5 border-b border-black/[0.05] last:border-0">
+                <EmployeeAvatar person={r} size={32} />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-[#111110]">
                     {r.first_name} {r.last_name}

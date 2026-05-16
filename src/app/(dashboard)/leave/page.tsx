@@ -5,6 +5,7 @@ import { useAuthStore } from '@/lib/store'
 import { IconPlus, IconCheck, IconX } from '@tabler/icons-react'
 import dayjs from 'dayjs'
 import clsx from 'clsx'
+import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
 
 const STATUS_BADGE: Record<string, string> = {
   pending: 'badge-amber', approved: 'badge-green', rejected: 'badge-red', cancelled: 'badge-gray',
@@ -138,6 +139,7 @@ export default function LeavePage() {
               ? <p className="text-xs text-gray-400 py-4 text-center">ไม่มีคำขอรออนุมัติ</p>
               : pending.map((r: any) => (
                   <div key={r.id} className="flex items-center gap-3 py-2.5 border-b border-black/[0.05] last:border-0">
+                    <EmployeeAvatar person={r} size={32} />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-[#111110]">{r.first_name} {r.last_name}</div>
                       <div className="text-xs text-gray-500">{r.leave_type_name} · {dayjs(r.start_date).format('D MMM')}–{dayjs(r.end_date).format('D MMM')} ({r.days_count} วัน)</div>

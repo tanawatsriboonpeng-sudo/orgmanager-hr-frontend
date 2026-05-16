@@ -13,6 +13,7 @@ import {
   IconMenu2, IconX, IconCalendarTime
 } from '@tabler/icons-react'
 import clsx from 'clsx'
+import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
 
 const ROLE_MENUS = {
   owner: [
@@ -137,12 +138,7 @@ export default function Sidebar() {
 
         {/* User chip */}
         <div className="mx-3 mt-3 mb-1 p-2.5 rounded-[10px] bg-gray-50 flex items-center gap-2.5">
-          <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
-            style={{ background: ROLE_COLORS[role] }}
-          >
-            {user?.firstName?.charAt(0) || '?'}
-          </div>
+          <EmployeeAvatar person={user as any} size={28} />
           <div className="flex-1 min-w-0">
             <div className="text-[12px] font-medium text-[#111110] truncate">
               {user?.fullName || user?.firstName || '—'}

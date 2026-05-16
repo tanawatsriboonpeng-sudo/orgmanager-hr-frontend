@@ -10,6 +10,7 @@ import {
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import Link from 'next/link'
+import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
 
 const ROLES = [
   { value: 'owner', label: 'เจ้าของ' },
@@ -315,8 +316,9 @@ export default function EmployeesPage() {
                   <td className="py-2.5 px-3 text-xs text-gray-500">{emp.employee_id}</td>
                   <td className="py-2.5 px-3">
                     <Link href={`/employees/${emp.id}`}
-                      className="font-medium text-[#111110] hover:text-[#1D9E75] hover:underline">
-                      {emp.first_name} {emp.last_name}
+                      className="flex items-center gap-2.5 font-medium text-[#111110] hover:text-[#1D9E75]">
+                      <EmployeeAvatar person={emp} size={28} />
+                      <span className="hover:underline">{emp.first_name} {emp.last_name}</span>
                     </Link>
                   </td>
                   <td className="py-2.5 px-3 text-xs text-gray-500">{emp.email}</td>

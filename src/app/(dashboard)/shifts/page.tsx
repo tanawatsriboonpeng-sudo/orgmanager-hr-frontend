@@ -10,6 +10,7 @@ import {
 import clsx from 'clsx'
 import ShiftRulesEditor from '@/components/shifts/ShiftRulesEditor'
 import WorkDaysEditor from '@/components/shifts/WorkDaysEditor'
+import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
 
 interface Employee {
   id: string
@@ -275,12 +276,17 @@ function ScheduleTab() {
                   hasPending && 'bg-[#FFFBEA]/40'
                 )}>
                   <td className="sticky left-0 bg-white px-3 py-2 min-w-[220px]">
-                    <div className="text-sm font-medium text-[#111110]">
-                      {emp.first_name} {emp.last_name}
-                      {emp.nickname && <span className="text-gray-400 font-normal ml-1">({emp.nickname})</span>}
-                    </div>
-                    <div className="text-[11px] text-gray-400">
-                      {emp.department_name || '—'}
+                    <div className="flex items-center gap-2.5">
+                      <EmployeeAvatar person={emp as any} size={28} />
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-[#111110] truncate">
+                          {emp.first_name} {emp.last_name}
+                          {emp.nickname && <span className="text-gray-400 font-normal ml-1">({emp.nickname})</span>}
+                        </div>
+                        <div className="text-[11px] text-gray-400">
+                          {emp.department_name || '—'}
+                        </div>
+                      </div>
                     </div>
                   </td>
                   {WEEK_DAYS.map(d => {
