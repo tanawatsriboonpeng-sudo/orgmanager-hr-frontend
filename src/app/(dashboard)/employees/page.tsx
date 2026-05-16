@@ -362,13 +362,13 @@ export default function EmployeesPage() {
             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-black/[0.06]">
               <div>
                 <label className="label">รหัสผ่าน *</label>
-                <input className="input" type="password" value={form.password}
+                <input className="input" type="password" autoComplete="new-password" value={form.password}
                   onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
                   placeholder="อย่างน้อย 6 ตัว" />
               </div>
               <div>
                 <label className="label">ยืนยันรหัสผ่าน *</label>
-                <input className="input" type="password" value={form.confirmPassword}
+                <input className="input" type="password" autoComplete="new-password" value={form.confirmPassword}
                   onChange={e => setForm(p => ({ ...p, confirmPassword: e.target.value }))}
                   placeholder="พิมพ์อีกครั้ง" />
               </div>
@@ -389,8 +389,18 @@ export default function EmployeesPage() {
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[200px]">
             <IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input className="input pl-9 py-2 text-sm" placeholder="ค้นหาชื่อ, อีเมล, รหัส…"
-              value={search} onChange={e => setSearch(e.target.value)} />
+            {/* type="search" + autoComplete=off + a non-email name so Chrome
+                doesn't try to autofill it as a username when the inline
+                reset-password row mounts elsewhere on the page. */}
+            <input
+              type="search"
+              name="employee-list-search"
+              autoComplete="off"
+              className="input pl-9 py-2 text-sm"
+              placeholder="ค้นหาชื่อ, อีเมล, รหัส…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
           </div>
           <select className="input py-2 text-sm w-auto min-w-[120px]" value={roleFilter}
             onChange={e => setRoleFilter(e.target.value)}>
@@ -498,13 +508,37 @@ export default function EmployeesPage() {
                   {showPwForm === emp.id && (
                     <tr className="bg-[#EEEDFE]/30 border-b border-black/[0.04]">
                       <td colSpan={6} className="px-3 py-3">
-                        <div className="flex items-center gap-3 flex-wrap">
+                        {/* Wrap in <form autoComplete="off"> + use
+                            autoComplete="new-password" on the password
+                            fields so Chrome doesn't try to autofill the
+                            search bar at the top of the page with the
+                            currently-logged-in user's saved credentials
+                            (which would hijack the filter to just owner's
+                            own row). The off-screen username hint also
+                            tells Chrome who this form is for. */}
+                        <form
+                          autoComplete="off"
+                          onSubmit={e => { e.preventDefault(); handleResetPassword(emp.id) }}
+                          className="flex items-center gap-3 flex-wrap"
+                        >
+                          <input
+                            type="text"
+                            name="username"
+                            autoComplete="username"
+                            value={emp.email}
+                            readOnly
+                            tabIndex={-1}
+                            aria-hidden="true"
+                            style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }}
+                          />
                           <span className="text-xs font-medium text-[#3C3489]">
                             รีเซ็ตรหัสผ่าน: {emp.first_name} {emp.last_name}
                           </span>
                           <div className="relative">
                             <input
                               type={pwForm.showPw ? 'text' : 'password'}
+                              name="new-password"
+                              autoComplete="new-password"
                               className="input py-1.5 text-xs pr-8 w-48"
                               placeholder="รหัสผ่านใหม่"
                               value={pwForm.newPassword}
@@ -517,18 +551,20 @@ export default function EmployeesPage() {
                           </div>
                           <input
                             type={pwForm.showPw ? 'text' : 'password'}
+                            name="confirm-password"
+                            autoComplete="new-password"
                             className="input py-1.5 text-xs w-48"
                             placeholder="ยืนยันรหัสผ่าน"
                             value={pwForm.confirmPassword}
                             onChange={e => setPwForm(p => ({ ...p, confirmPassword: e.target.value }))}
                           />
-                          <button onClick={() => handleResetPassword(emp.id)} className="btn btn-primary py-1.5 text-xs">
+                          <button type="submit" className="btn btn-primary py-1.5 text-xs">
                             บันทึก
                           </button>
-                          <button onClick={closePwForm} className="btn py-1.5 text-xs">
+                          <button type="button" onClick={closePwForm} className="btn py-1.5 text-xs">
                             ยกเลิก
                           </button>
-                        </div>
+                        </form>
                       </td>
                     </tr>
                   )}
