@@ -1,0 +1,771 @@
+'use client'
+import { useEffect, useMemo, useState } from 'react'
+import { payrollApi, employeeApi, type PayrollRecord, type PayrollStatus } from '@/lib/api'
+import { useAuthStore } from '@/lib/store'
+import {
+  IconPlus, IconCheck, IconCash, IconTrash, IconReceipt2,
+  IconPrinter, IconFileInvoice, IconX, IconWand,
+} from '@tabler/icons-react'
+import dayjs from 'dayjs'
+import clsx from 'clsx'
+import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
+
+const MONTHS_TH = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+]
+const STATUS_BADGE: Record<PayrollStatus, string> = {
+  draft: 'badge-gray', approved: 'badge-amber', paid: 'badge-green',
+}
+const STATUS_TH: Record<PayrollStatus, string> = {
+  draft: 'ร่าง', approved: 'อนุมัติแล้ว', paid: 'จ่ายแล้ว',
+}
+
+const toNum = (v: any) => Number(v ?? 0)
+const fmtMoney = (v: any) =>
+  toNum(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+export default function PayrollPage() {
+  const { user } = useAuthStore()
+  const role = user?.role
+  const canManage = role === 'hr' || role === 'owner'
+
+  const now = dayjs()
+  const [month, setMonth] = useState<number | ''>(now.month() + 1)
+  const [year, setYear] = useState<number>(now.year())
+  const [statusFilter, setStatusFilter] = useState<PayrollStatus | ''>('')
+
+  const [records, setRecords] = useState<PayrollRecord[]>([])
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const [info, setInfo] = useState('')
+
+  const [showGenerate, setShowGenerate] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
+  const [selected, setSelected] = useState<PayrollRecord | null>(null)
+
+  const load = async () => {
+    setLoading(true); setErr('')
+    try {
+      const params: any = { year }
+      if (month) params.month = month
+      if (statusFilter) params.status = statusFilter
+      const r = await payrollApi.list(params)
+      setRecords(r.data.data || [])
+    } catch (e: any) {
+      setErr(e.response?.data?.message || 'โหลดข้อมูลไม่สำเร็จ')
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [month, year, statusFilter])
+
+  const totals = useMemo(() => {
+    const acc = { count: records.length, gross: 0, deductions: 0, net: 0 }
+    for (const r of records) {
+      acc.gross += toNum(r.base_salary) + toNum(r.ot_amount) + toNum(r.bonus) + toNum(r.allowances)
+      acc.deductions += toNum(r.social_security) + toNum(r.income_tax) + toNum(r.other_deductions)
+      acc.net += toNum(r.net_salary)
+    }
+    return acc
+  }, [records])
+
+  const flash = (msg: string, isError = false) => {
+    if (isError) { setErr(msg); setInfo('') } else { setInfo(msg); setErr('') }
+    setTimeout(() => { setErr(''); setInfo('') }, 4000)
+  }
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-[#111110]">
+            {canManage ? 'เงินเดือน' : 'สลิปเงินเดือน'}
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {canManage ? 'จัดการสลิปเงินเดือนรายเดือน' : 'ดูสลิปเงินเดือนย้อนหลัง'}
+          </p>
+        </div>
+        {canManage && (
+          <div className="flex gap-2">
+            <button onClick={() => setShowGenerate(true)} className="btn text-sm">
+              <IconWand size={15} /> สร้างสลิปประจำเดือน
+            </button>
+            <button onClick={() => setShowCreate(true)} className="btn btn-primary text-sm">
+              <IconPlus size={15} /> เพิ่มสลิป
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div className="card mb-5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div>
+            <label className="label">เดือน</label>
+            <select
+              className="input"
+              value={month}
+              onChange={e => setMonth(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+            >
+              <option value="">ทั้งปี</option>
+              {MONTHS_TH.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">ปี</label>
+            <select
+              className="input"
+              value={year}
+              onChange={e => setYear(parseInt(e.target.value, 10))}
+            >
+              {Array.from({ length: 5 }).map((_, i) => {
+                const y = now.year() - i
+                return <option key={y} value={y}>{y + 543}</option>
+              })}
+            </select>
+          </div>
+          {canManage && (
+            <div>
+              <label className="label">สถานะ</label>
+              <select
+                className="input"
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value as PayrollStatus | '')}
+              >
+                <option value="">ทั้งหมด</option>
+                <option value="draft">ร่าง</option>
+                <option value="approved">อนุมัติแล้ว</option>
+                <option value="paid">จ่ายแล้ว</option>
+              </select>
+            </div>
+          )}
+          <div className="flex items-end">
+            <div className="text-xs text-gray-500">
+              <div>รวม {totals.count} รายการ</div>
+              <div className="text-[#085041] font-medium mt-0.5">สุทธิ ฿{fmtMoney(totals.net)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {(err || info) && (
+        <div className={clsx(
+          'mb-4 px-3 py-2 rounded-[10px] text-xs',
+          err ? 'bg-[#FCEBEB] text-[#791F1F]' : 'bg-[#E1F5EE] text-[#085041]'
+        )}>
+          {err || info}
+        </div>
+      )}
+
+      {/* List */}
+      {loading ? (
+        <div className="card text-center text-sm text-gray-400 py-12">กำลังโหลด…</div>
+      ) : records.length === 0 ? (
+        <div className="card text-center text-sm text-gray-400 py-12">
+          ยังไม่มีสลิปเงินเดือนในช่วงเวลาที่เลือก
+          {canManage && (
+            <div className="mt-3">
+              <button onClick={() => setShowGenerate(true)} className="btn text-xs">
+                <IconWand size={13} /> สร้างสลิปประจำเดือน
+              </button>
+            </div>
+          )}
+        </div>
+      ) : canManage ? (
+        <PayrollTable records={records} onPick={setSelected} />
+      ) : (
+        <PayrollCards records={records} onPick={setSelected} />
+      )}
+
+      {/* Modals */}
+      {showGenerate && canManage && (
+        <BulkGenerateModal
+          defaultMonth={typeof month === 'number' ? month : now.month() + 1}
+          defaultYear={year}
+          onClose={() => setShowGenerate(false)}
+          onDone={(msg) => { setShowGenerate(false); flash(msg); load() }}
+          onError={(msg) => flash(msg, true)}
+        />
+      )}
+      {showCreate && canManage && (
+        <CreateSlipModal
+          onClose={() => setShowCreate(false)}
+          onDone={() => { setShowCreate(false); flash('สร้างสลิปแล้ว'); load() }}
+          onError={(msg) => flash(msg, true)}
+        />
+      )}
+      {selected && (
+        <SlipDetailModal
+          record={selected}
+          canManage={canManage}
+          onClose={() => setSelected(null)}
+          onChanged={() => { setSelected(null); load() }}
+          onError={(msg) => flash(msg, true)}
+        />
+      )}
+    </div>
+  )
+}
+
+/* ===== HR/Owner Table ===== */
+function PayrollTable({ records, onPick }: { records: PayrollRecord[]; onPick: (r: PayrollRecord) => void }) {
+  return (
+    <div className="card p-0 overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-xs text-gray-500">
+            <tr>
+              <th className="text-left px-4 py-3 font-medium">พนักงาน</th>
+              <th className="text-left px-4 py-3 font-medium">เดือน/ปี</th>
+              <th className="text-right px-4 py-3 font-medium">เงินเดือน</th>
+              <th className="text-right px-4 py-3 font-medium">OT</th>
+              <th className="text-right px-4 py-3 font-medium">โบนัส/เบี้ย</th>
+              <th className="text-right px-4 py-3 font-medium">หัก</th>
+              <th className="text-right px-4 py-3 font-medium">สุทธิ</th>
+              <th className="text-center px-4 py-3 font-medium">สถานะ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {records.map((r) => {
+              const additions = toNum(r.bonus) + toNum(r.allowances)
+              const deductions = toNum(r.social_security) + toNum(r.income_tax) + toNum(r.other_deductions)
+              return (
+                <tr
+                  key={r.id}
+                  onClick={() => onPick(r)}
+                  className="border-t border-black/[0.04] hover:bg-gray-50 cursor-pointer"
+                >
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <EmployeeAvatar person={r} size={30} />
+                      <div className="min-w-0">
+                        <div className="font-medium text-[#111110] truncate">
+                          {r.first_name} {r.last_name}
+                        </div>
+                        <div className="text-xs text-gray-500 truncate">{r.position || '—'}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-gray-700">
+                    {MONTHS_TH[r.month - 1]} {r.year + 543}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums">{fmtMoney(r.base_salary)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-gray-600">
+                    {toNum(r.ot_amount) > 0 ? fmtMoney(r.ot_amount) : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-gray-600">
+                    {additions > 0 ? fmtMoney(additions) : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-red-600">
+                    {deductions > 0 ? `-${fmtMoney(deductions)}` : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#085041]">
+                    {fmtMoney(r.net_salary)}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={clsx('badge', STATUS_BADGE[r.status])}>
+                      {STATUS_TH[r.status]}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+/* ===== Employee Cards ===== */
+function PayrollCards({ records, onPick }: { records: PayrollRecord[]; onPick: (r: PayrollRecord) => void }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {records.map((r) => (
+        <button
+          key={r.id}
+          onClick={() => onPick(r)}
+          className="card text-left hover:shadow-md transition-shadow"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs text-gray-500">
+              {MONTHS_TH[r.month - 1]} {r.year + 543}
+            </div>
+            <span className={clsx('badge', STATUS_BADGE[r.status])}>
+              {STATUS_TH[r.status]}
+            </span>
+          </div>
+          <div className="text-2xl font-semibold text-[#085041] tabular-nums">
+            ฿{fmtMoney(r.net_salary)}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">เงินเดือนสุทธิ</div>
+          <div className="mt-3 pt-3 border-t border-black/[0.05] text-xs text-gray-500 flex justify-between">
+            <span>เงินเดือน ฿{fmtMoney(r.base_salary)}</span>
+            {toNum(r.ot_amount) > 0 && <span>OT ฿{fmtMoney(r.ot_amount)}</span>}
+          </div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/* ===== Bulk Generate Modal ===== */
+function BulkGenerateModal({
+  defaultMonth, defaultYear, onClose, onDone, onError,
+}: {
+  defaultMonth: number; defaultYear: number
+  onClose: () => void
+  onDone: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const [m, setM] = useState(defaultMonth)
+  const [y, setY] = useState(defaultYear)
+  const [busy, setBusy] = useState(false)
+
+  const submit = async () => {
+    setBusy(true)
+    try {
+      const res = await payrollApi.bulkGenerate(m, y)
+      onDone(res.data.message || 'สร้างสลิปแล้ว')
+    } catch (e: any) {
+      onError(e.response?.data?.message || 'สร้างสลิปไม่สำเร็จ')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <ModalShell onClose={onClose} title="สร้างสลิปประจำเดือน">
+      <p className="text-xs text-gray-500 mb-4">
+        ระบบจะสร้างสลิป <strong>ร่าง</strong> ของพนักงานทุกคน (ยกเว้นเจ้าของ) โดยใช้:
+      </p>
+      <ul className="text-xs text-gray-600 space-y-1 mb-4 ml-4 list-disc">
+        <li>เงินเดือนพื้นฐานจากข้อมูลพนักงานปัจจุบัน</li>
+        <li>วันทำงาน / ขาดงาน / มาสายจากการลงเวลา</li>
+        <li>ชั่วโมง OT จากคำขอที่อนุมัติแล้ว</li>
+        <li>คำนวณ OT × 1.5 และประกันสังคม 5% (สูงสุด 750 บาท) อัตโนมัติ</li>
+      </ul>
+      <p className="text-xs text-gray-500 mb-4">
+        ถ้าพนักงานคนใดมีสลิปของเดือนนี้แล้ว ระบบจะข้ามไป (ไม่ทับ)
+      </p>
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div>
+          <label className="label">เดือน</label>
+          <select className="input" value={m} onChange={e => setM(parseInt(e.target.value, 10))}>
+            {MONTHS_TH.map((mm, i) => <option key={i} value={i + 1}>{mm}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">ปี</label>
+          <select className="input" value={y} onChange={e => setY(parseInt(e.target.value, 10))}>
+            {Array.from({ length: 5 }).map((_, i) => {
+              const yr = dayjs().year() - i
+              return <option key={yr} value={yr}>{yr + 543}</option>
+            })}
+          </select>
+        </div>
+      </div>
+      <div className="flex gap-2 justify-end">
+        <button onClick={onClose} className="btn text-sm">ยกเลิก</button>
+        <button onClick={submit} disabled={busy} className="btn btn-primary text-sm">
+          {busy ? 'กำลังสร้าง…' : 'สร้างสลิป'}
+        </button>
+      </div>
+    </ModalShell>
+  )
+}
+
+/* ===== Create Single Slip Modal ===== */
+function CreateSlipModal({
+  onClose, onDone, onError,
+}: {
+  onClose: () => void
+  onDone: () => void
+  onError: (msg: string) => void
+}) {
+  const now = dayjs()
+  const [employees, setEmployees] = useState<any[]>([])
+  const [form, setForm] = useState({
+    employeeId: '', month: now.month() + 1, year: now.year(),
+    baseSalary: 0, otAmount: 0, bonus: 0, allowances: 0,
+    socialSecurity: 0, incomeTax: 0, otherDeductions: 0,
+    workDays: 0, absentDays: 0, lateCount: 0, otHours: 0,
+    notes: '',
+  })
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    employeeApi.list().then(r => setEmployees(r.data.data || [])).catch(() => {})
+  }, [])
+
+  const onEmployeeChange = (id: string) => {
+    const emp = employees.find(e => e.id === id)
+    setForm(p => ({
+      ...p,
+      employeeId: id,
+      baseSalary: toNum(emp?.base_salary),
+    }))
+  }
+
+  const submit = async () => {
+    if (!form.employeeId || !form.baseSalary) {
+      onError('กรุณาเลือกพนักงานและระบุเงินเดือนพื้นฐาน'); return
+    }
+    setBusy(true)
+    try {
+      await payrollApi.create(form)
+      onDone()
+    } catch (e: any) {
+      onError(e.response?.data?.message || 'สร้างสลิปไม่สำเร็จ')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <ModalShell onClose={onClose} title="เพิ่มสลิปเงินเดือน" wide>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+        <div className="sm:col-span-2">
+          <label className="label">พนักงาน</label>
+          <select className="input" value={form.employeeId} onChange={e => onEmployeeChange(e.target.value)}>
+            <option value="">เลือกพนักงาน</option>
+            {employees.map(e => (
+              <option key={e.id} value={e.id}>
+                {e.first_name} {e.last_name} {e.nickname ? `(${e.nickname})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        <NumField label="เดือน" value={form.month} onChange={v => setForm(p => ({ ...p, month: v }))} />
+        <NumField label="ปี (ค.ศ.)" value={form.year} onChange={v => setForm(p => ({ ...p, year: v }))} />
+      </div>
+
+      <SlipAmountsForm form={form} setForm={setForm} />
+
+      <div className="mt-4">
+        <label className="label">หมายเหตุ</label>
+        <textarea
+          className="input min-h-[60px]"
+          value={form.notes}
+          onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+        />
+      </div>
+
+      <NetPreview form={form} />
+
+      <div className="flex gap-2 justify-end mt-4">
+        <button onClick={onClose} className="btn text-sm">ยกเลิก</button>
+        <button onClick={submit} disabled={busy} className="btn btn-primary text-sm">
+          {busy ? 'กำลังบันทึก…' : 'บันทึกสลิป'}
+        </button>
+      </div>
+    </ModalShell>
+  )
+}
+
+/* ===== Slip Detail / Edit Modal ===== */
+function SlipDetailModal({
+  record, canManage, onClose, onChanged, onError,
+}: {
+  record: PayrollRecord
+  canManage: boolean
+  onClose: () => void
+  onChanged: () => void
+  onError: (msg: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [form, setForm] = useState({
+    baseSalary: toNum(record.base_salary),
+    otAmount: toNum(record.ot_amount),
+    bonus: toNum(record.bonus),
+    allowances: toNum(record.allowances),
+    socialSecurity: toNum(record.social_security),
+    incomeTax: toNum(record.income_tax),
+    otherDeductions: toNum(record.other_deductions),
+    workDays: record.work_days ?? 0,
+    absentDays: record.absent_days,
+    lateCount: record.late_count,
+    otHours: toNum(record.ot_hours),
+    notes: record.notes || '',
+  })
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      await payrollApi.update(record.id, form)
+      onChanged()
+    } catch (e: any) {
+      onError(e.response?.data?.message || 'บันทึกไม่สำเร็จ')
+    } finally { setBusy(false) }
+  }
+
+  const action = async (fn: () => Promise<any>, successMsg: string) => {
+    setBusy(true)
+    try { await fn(); onChanged() } catch (e: any) {
+      onError(e.response?.data?.message || successMsg + 'ไม่สำเร็จ')
+    } finally { setBusy(false) }
+  }
+
+  const isPaid = record.status === 'paid'
+  const isDraft = record.status === 'draft'
+  const isApproved = record.status === 'approved'
+
+  return (
+    <ModalShell onClose={onClose} title="" wide>
+      {/* Header */}
+      <div className="flex items-center gap-3 pb-4 border-b border-black/[0.06]">
+        <EmployeeAvatar person={record} size={48} />
+        <div className="flex-1 min-w-0">
+          <div className="text-base font-semibold text-[#111110]">
+            {record.first_name} {record.last_name}
+          </div>
+          <div className="text-xs text-gray-500">
+            {record.position || '—'} · {record.department_name || '—'}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-xs text-gray-500">{MONTHS_TH[record.month - 1]} {record.year + 543}</div>
+          <span className={clsx('badge mt-1', STATUS_BADGE[record.status])}>
+            {STATUS_TH[record.status]}
+          </span>
+        </div>
+      </div>
+
+      {/* Body */}
+      {editing && canManage ? (
+        <div className="py-4">
+          <SlipAmountsForm form={form} setForm={setForm} />
+          <div className="mt-4">
+            <label className="label">หมายเหตุ</label>
+            <textarea
+              className="input min-h-[60px]"
+              value={form.notes}
+              onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+            />
+          </div>
+          <NetPreview form={form} />
+        </div>
+      ) : (
+        <SlipReadOnly record={record} />
+      )}
+
+      {/* Footer actions */}
+      <div className="flex flex-wrap gap-2 justify-end pt-4 border-t border-black/[0.06] mt-2">
+        {!canManage ? (
+          <button onClick={() => window.print()} className="btn text-sm">
+            <IconPrinter size={14} /> พิมพ์
+          </button>
+        ) : editing ? (
+          <>
+            <button onClick={() => setEditing(false)} className="btn text-sm">ยกเลิก</button>
+            <button onClick={save} disabled={busy || isPaid} className="btn btn-primary text-sm">
+              {busy ? 'กำลังบันทึก…' : 'บันทึก'}
+            </button>
+          </>
+        ) : (
+          <>
+            {isDraft && (
+              <button
+                onClick={() => action(() => payrollApi.delete(record.id), 'ลบ')}
+                disabled={busy}
+                className="btn text-sm text-red-500 border-red-200 hover:bg-red-50"
+              >
+                <IconTrash size={14} /> ลบ
+              </button>
+            )}
+            <button onClick={() => window.print()} className="btn text-sm">
+              <IconPrinter size={14} /> พิมพ์
+            </button>
+            {!isPaid && (
+              <button onClick={() => setEditing(true)} className="btn text-sm">
+                <IconFileInvoice size={14} /> แก้ไข
+              </button>
+            )}
+            {isDraft && (
+              <button
+                onClick={() => action(() => payrollApi.approve(record.id), 'อนุมัติ')}
+                disabled={busy}
+                className="btn btn-primary text-sm"
+              >
+                <IconCheck size={14} /> อนุมัติ
+              </button>
+            )}
+            {isApproved && (
+              <button
+                onClick={() => action(() => payrollApi.markPaid(record.id), 'ทำเครื่องหมายจ่ายแล้ว')}
+                disabled={busy}
+                className="btn btn-primary text-sm"
+              >
+                <IconCash size={14} /> จ่ายแล้ว
+              </button>
+            )}
+            {isPaid && (
+              <button
+                onClick={() => action(() => payrollApi.update(record.id, { status: 'approved' }), 'ย้อนสถานะ')}
+                disabled={busy}
+                className="btn text-sm"
+              >
+                ย้อนกลับเป็น "อนุมัติแล้ว"
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </ModalShell>
+  )
+}
+
+function SlipReadOnly({ record }: { record: PayrollRecord }) {
+  const additions = toNum(record.base_salary) + toNum(record.ot_amount) + toNum(record.bonus) + toNum(record.allowances)
+  const deductions = toNum(record.social_security) + toNum(record.income_tax) + toNum(record.other_deductions)
+  return (
+    <div className="py-4 grid grid-cols-1 md:grid-cols-2 gap-5">
+      <div>
+        <h3 className="text-xs font-semibold text-gray-500 mb-2">รายรับ</h3>
+        <Row label="เงินเดือนพื้นฐาน" value={record.base_salary} />
+        <Row label="ค่าล่วงเวลา (OT)" value={record.ot_amount} sub={`${toNum(record.ot_hours)} ชม.`} />
+        <Row label="โบนัส" value={record.bonus} />
+        <Row label="เบี้ยเลี้ยง/อื่นๆ" value={record.allowances} />
+        <Row label="รวมรายรับ" value={additions} bold />
+      </div>
+      <div>
+        <h3 className="text-xs font-semibold text-gray-500 mb-2">รายการหัก</h3>
+        <Row label="ประกันสังคม" value={record.social_security} negative />
+        <Row label="ภาษี" value={record.income_tax} negative />
+        <Row label="หักอื่นๆ" value={record.other_deductions} negative />
+        <Row label="รวมรายการหัก" value={deductions} bold negative />
+
+        <h3 className="text-xs font-semibold text-gray-500 mb-2 mt-4">สถิติ</h3>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="bg-gray-50 rounded p-2">
+            <div className="text-gray-500">วันทำงาน</div>
+            <div className="font-medium">{record.work_days ?? '—'} วัน</div>
+          </div>
+          <div className="bg-gray-50 rounded p-2">
+            <div className="text-gray-500">ขาดงาน</div>
+            <div className="font-medium">{record.absent_days} วัน</div>
+          </div>
+          <div className="bg-gray-50 rounded p-2">
+            <div className="text-gray-500">มาสาย</div>
+            <div className="font-medium">{record.late_count} ครั้ง</div>
+          </div>
+          <div className="bg-gray-50 rounded p-2">
+            <div className="text-gray-500">OT</div>
+            <div className="font-medium">{toNum(record.ot_hours)} ชม.</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="md:col-span-2 mt-2 p-4 rounded-[10px] bg-[#E1F5EE] flex items-center justify-between">
+        <div className="text-sm text-[#085041]">เงินเดือนสุทธิ</div>
+        <div className="text-2xl font-bold text-[#085041] tabular-nums">฿{fmtMoney(record.net_salary)}</div>
+      </div>
+
+      {record.notes && (
+        <div className="md:col-span-2">
+          <div className="text-xs text-gray-500 mb-1">หมายเหตุ</div>
+          <div className="text-sm text-gray-700 whitespace-pre-wrap">{record.notes}</div>
+        </div>
+      )}
+
+      {record.paid_at && (
+        <div className="md:col-span-2 text-xs text-gray-500">
+          จ่ายเมื่อ {dayjs(record.paid_at).format('D MMM YYYY HH:mm')}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Row({ label, value, sub, bold, negative }: { label: string; value: any; sub?: string; bold?: boolean; negative?: boolean }) {
+  return (
+    <div className={clsx('flex justify-between py-1.5 text-sm', bold && 'border-t border-black/[0.06] pt-2 font-semibold')}>
+      <div>
+        <span className="text-gray-700">{label}</span>
+        {sub && <span className="text-xs text-gray-400 ml-1">({sub})</span>}
+      </div>
+      <span className={clsx('tabular-nums', negative ? 'text-red-600' : 'text-[#111110]')}>
+        {negative && toNum(value) > 0 ? '-' : ''}{fmtMoney(value)}
+      </span>
+    </div>
+  )
+}
+
+/* ===== Shared amount form ===== */
+function SlipAmountsForm({ form, setForm }: { form: any; setForm: (fn: (p: any) => any) => void }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <h3 className="text-xs font-semibold text-gray-500 mb-2">รายรับ</h3>
+        <NumField label="เงินเดือนพื้นฐาน" value={form.baseSalary} onChange={v => setForm((p: any) => ({ ...p, baseSalary: v }))} money />
+        <NumField label="ค่าล่วงเวลา (OT)" value={form.otAmount} onChange={v => setForm((p: any) => ({ ...p, otAmount: v }))} money />
+        <NumField label="โบนัส" value={form.bonus} onChange={v => setForm((p: any) => ({ ...p, bonus: v }))} money />
+        <NumField label="เบี้ยเลี้ยง/อื่นๆ" value={form.allowances} onChange={v => setForm((p: any) => ({ ...p, allowances: v }))} money />
+      </div>
+      <div>
+        <h3 className="text-xs font-semibold text-gray-500 mb-2">รายการหัก</h3>
+        <NumField label="ประกันสังคม" value={form.socialSecurity} onChange={v => setForm((p: any) => ({ ...p, socialSecurity: v }))} money />
+        <NumField label="ภาษี" value={form.incomeTax} onChange={v => setForm((p: any) => ({ ...p, incomeTax: v }))} money />
+        <NumField label="หักอื่นๆ" value={form.otherDeductions} onChange={v => setForm((p: any) => ({ ...p, otherDeductions: v }))} money />
+      </div>
+      <div className="sm:col-span-2">
+        <h3 className="text-xs font-semibold text-gray-500 mb-2">สถิติเดือนนี้</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <NumField label="วันทำงาน" value={form.workDays} onChange={v => setForm((p: any) => ({ ...p, workDays: v }))} />
+          <NumField label="ขาดงาน" value={form.absentDays} onChange={v => setForm((p: any) => ({ ...p, absentDays: v }))} />
+          <NumField label="มาสาย (ครั้ง)" value={form.lateCount} onChange={v => setForm((p: any) => ({ ...p, lateCount: v }))} />
+          <NumField label="OT (ชม.)" value={form.otHours} onChange={v => setForm((p: any) => ({ ...p, otHours: v }))} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function NumField({ label, value, onChange, money }: { label: string; value: number; onChange: (v: number) => void; money?: boolean }) {
+  return (
+    <div className="mb-2">
+      <label className="label">{label}</label>
+      <div className="relative">
+        {money && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">฿</span>}
+        <input
+          type="number"
+          step={money ? '0.01' : '1'}
+          className={clsx('input tabular-nums', money && 'pl-7')}
+          value={value}
+          onChange={e => onChange(Number(e.target.value || 0))}
+        />
+      </div>
+    </div>
+  )
+}
+
+function NetPreview({ form }: { form: any }) {
+  const net = toNum(form.baseSalary) + toNum(form.otAmount) + toNum(form.bonus) + toNum(form.allowances)
+    - toNum(form.socialSecurity) - toNum(form.incomeTax) - toNum(form.otherDeductions)
+  return (
+    <div className="mt-4 p-3 rounded-[10px] bg-[#E1F5EE] flex items-center justify-between">
+      <div className="text-xs text-[#085041]">เงินเดือนสุทธิ (คำนวณอัตโนมัติ)</div>
+      <div className="text-lg font-bold text-[#085041] tabular-nums">฿{fmtMoney(net)}</div>
+    </div>
+  )
+}
+
+/* ===== Modal shell ===== */
+function ModalShell({ onClose, title, children, wide }: { onClose: () => void; title: string; children: any; wide?: boolean }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div
+        className={clsx(
+          'bg-white rounded-[14px] shadow-xl w-full max-h-[92vh] overflow-y-auto',
+          wide ? 'max-w-3xl' : 'max-w-md'
+        )}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-black/[0.06]">
+          <h2 className="text-base font-semibold text-[#111110]">{title || ' '}</h2>
+          <button onClick={onClose} className="btn btn-ghost p-1.5">
+            <IconX size={16} />
+          </button>
+        </div>
+        <div className="p-4">{children}</div>
+      </div>
+    </div>
+  )
+}
