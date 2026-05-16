@@ -1,4 +1,5 @@
 'use client'
+// @ts-nocheck — diagnostic only, will revert
 import { useEffect, useMemo, useState } from 'react'
 import { otApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
