@@ -1,0 +1,287 @@
+'use client'
+import { useEffect, useMemo, useState } from 'react'
+import { employeeApi, shiftApi, ShiftAssignment, ShiftBulkItem } from '@/lib/api'
+import { useAuthStore } from '@/lib/store'
+import dayjs from 'dayjs'
+import {
+  IconCalendarTime, IconChevronLeft, IconChevronRight,
+  IconCheck, IconX, IconDeviceFloppy, IconRefresh
+} from '@tabler/icons-react'
+import clsx from 'clsx'
+
+interface Employee {
+  id: string
+  first_name: string
+  last_name: string
+  nickname?: string
+  role: string
+  shift_type?: string
+  department_name?: string
+  is_active: boolean
+}
+
+// shift_type: undefined → uses employee default (from employees.shift_type)
+// 'normal' | 'flexible' | 'dayoff' → explicit override
+type ShiftValue = 'normal' | 'flexible' | 'dayoff' | 'default'
+
+const SHIFT_META: Record<string, { label: string; short: string; color: string; bg: string }> = {
+  normal:   { label: 'กะปกติ', short: 'ป', color: '#0C447C', bg: '#E6F1FB' },
+  flexible: { label: 'ยืดหยุ่น', short: 'ย', color: '#633806', bg: '#FAEEDA' },
+  dayoff:   { label: 'วันหยุด', short: '—', color: '#791F1F', bg: '#FCEBEB' },
+}
+
+const DAY_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
+
+function weekDates(anchor: dayjs.Dayjs): dayjs.Dayjs[] {
+  // Week starts Monday
+  const monday = anchor.day() === 0 ? anchor.subtract(6, 'day') : anchor.subtract(anchor.day() - 1, 'day')
+  return Array.from({ length: 7 }, (_, i) => monday.add(i, 'day'))
+}
+
+export default function ShiftsPage() {
+  const { user } = useAuthStore()
+  const isHR = user?.role === 'hr' || user?.role === 'owner'
+
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [assignments, setAssignments] = useState<ShiftAssignment[]>([])
+  // pending edits keyed by `${empId}_${date}` → value
+  const [pending, setPending] = useState<Record<string, ShiftValue>>({})
+  const [anchor, setAnchor] = useState(dayjs())
+  const [loading, setLoading] = useState(false)
+  const [msg, setMsg] = useState({ text: '', ok: true })
+
+  const week = useMemo(() => weekDates(anchor), [anchor])
+  const startDate = week[0].format('YYYY-MM-DD')
+  const endDate = week[6].format('YYYY-MM-DD')
+
+  // Build a lookup: `${empId}_${date}` → shift_type
+  const assignedMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const a of assignments) m[`${a.employee_id}_${a.date}`] = a.shift_type
+    return m
+  }, [assignments])
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const [eRes, sRes] = await Promise.allSettled([
+        employeeApi.list(),
+        shiftApi.list(startDate, endDate),
+      ])
+      if (eRes.status === 'fulfilled') {
+        // Owners don't have shifts
+        const all: Employee[] = eRes.value.data.data || []
+        setEmployees(all.filter(e => e.role !== 'owner' && e.is_active !== false))
+      }
+      if (sRes.status === 'fulfilled') setAssignments(sRes.value.data.data || [])
+      setPending({})
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [startDate, endDate])
+
+  if (!isHR) {
+    return (
+      <div className="p-6 max-w-3xl mx-auto">
+        <div className="card text-center py-10">
+          <IconCalendarTime size={28} className="mx-auto text-gray-300 mb-2" />
+          <p className="text-sm text-gray-500">หน้านี้สำหรับ HR/เจ้าของเท่านั้น</p>
+        </div>
+      </div>
+    )
+  }
+
+  const cellValue = (empId: string, date: string, defaultShift?: string): ShiftValue | 'default' => {
+    const key = `${empId}_${date}`
+    if (pending[key] !== undefined) return pending[key]
+    const assigned = assignedMap[key]
+    if (assigned) return assigned as ShiftValue
+    return 'default'
+  }
+
+  const setCell = (empId: string, date: string, value: ShiftValue) => {
+    const key = `${empId}_${date}`
+    setPending(p => ({ ...p, [key]: value }))
+  }
+
+  const hasChanges = Object.keys(pending).length > 0
+
+  const save = async () => {
+    if (!hasChanges) return
+    setLoading(true)
+    setMsg({ text: '', ok: true })
+    try {
+      const items: ShiftBulkItem[] = Object.entries(pending).map(([key, value]) => {
+        const [employeeId, date] = key.split('_')
+        return { employeeId, date, shiftType: value }
+      })
+      await shiftApi.bulkUpsert(items)
+      setMsg({ text: `บันทึก ${items.length} รายการแล้ว`, ok: true })
+      setPending({})
+      load()
+    } catch (e: any) {
+      setMsg({ text: e.response?.data?.message || 'เกิดข้อผิดพลาด', ok: false })
+    } finally { setLoading(false) }
+  }
+
+  const discardChanges = () => {
+    setPending({})
+    setMsg({ text: '', ok: true })
+  }
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+        <div>
+          <h1 className="text-xl font-semibold text-[#111110] flex items-center gap-2">
+            <IconCalendarTime size={20} className="text-[#1D9E75]" />
+            กะการทำงาน
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            กำหนดกะของพนักงานรายวัน — ค่าว่างจะใช้กะเริ่มต้นของพนักงานคนนั้น
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setAnchor(a => a.subtract(7, 'day'))} className="btn text-xs px-2 py-2">
+            <IconChevronLeft size={14} />
+          </button>
+          <button onClick={() => setAnchor(dayjs())} className="btn text-xs">วันนี้</button>
+          <button onClick={() => setAnchor(a => a.add(7, 'day'))} className="btn text-xs px-2 py-2">
+            <IconChevronRight size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* Week label */}
+      <div className="mb-3 text-sm text-gray-600">
+        สัปดาห์ {week[0].format('D MMM')} – {week[6].format('D MMM YYYY')}
+      </div>
+
+      {msg.text && (
+        <div className={clsx(
+          'flex items-center gap-2 p-2.5 rounded-[10px] text-xs mb-3',
+          msg.ok ? 'bg-[#E1F5EE] text-[#085041]' : 'bg-red-50 text-red-600'
+        )}>
+          {msg.ok ? <IconCheck size={13} /> : <IconX size={13} />}
+          {msg.text}
+        </div>
+      )}
+
+      {/* Legend */}
+      <div className="flex items-center gap-3 mb-3 text-xs text-gray-500 flex-wrap">
+        <span className="text-gray-400">คำอธิบาย:</span>
+        {Object.entries(SHIFT_META).map(([k, v]) => (
+          <span key={k} className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-medium"
+              style={{ background: v.bg, color: v.color }}
+            >
+              {v.short}
+            </span>
+            {v.label}
+          </span>
+        ))}
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-medium bg-gray-100 text-gray-400">
+            ·
+          </span>
+          ใช้ค่าเริ่มต้น
+        </span>
+      </div>
+
+      {/* Grid */}
+      <div className="card p-0 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b border-black/[0.06]">
+              <th className="sticky left-0 bg-gray-50 text-left px-3 py-2.5 text-xs font-medium text-gray-500 min-w-[220px]">
+                พนักงาน
+              </th>
+              {week.map((d, i) => {
+                const isToday = d.isSame(dayjs(), 'day')
+                const isWeekend = d.day() === 0 || d.day() === 6
+                return (
+                  <th key={i} className={clsx(
+                    'text-center px-2 py-2.5 text-xs font-medium min-w-[80px]',
+                    isToday ? 'text-[#1D9E75] bg-[#E1F5EE]/40' : isWeekend ? 'text-gray-400' : 'text-gray-600'
+                  )}>
+                    <div>{DAY_TH[d.day()]}</div>
+                    <div className="text-[11px] font-normal">{d.format('D/M')}</div>
+                  </th>
+                )
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {employees.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="text-center py-10 text-sm text-gray-400">
+                  {loading ? 'กำลังโหลด...' : 'ยังไม่มีพนักงาน (หรือมีแต่เจ้าของเท่านั้น)'}
+                </td>
+              </tr>
+            ) : employees.map(emp => (
+              <tr key={emp.id} className="border-b border-black/[0.04] hover:bg-gray-50/40">
+                <td className="sticky left-0 bg-white px-3 py-2 min-w-[220px]">
+                  <div className="text-sm font-medium text-[#111110]">
+                    {emp.first_name} {emp.last_name}
+                    {emp.nickname && <span className="text-gray-400 font-normal ml-1">({emp.nickname})</span>}
+                  </div>
+                  <div className="text-[11px] text-gray-400">
+                    {emp.department_name || '—'} · ค่าเริ่มต้น: {SHIFT_META[emp.shift_type || 'normal']?.label || emp.shift_type}
+                  </div>
+                </td>
+                {week.map((d, i) => {
+                  const dateStr = d.format('YYYY-MM-DD')
+                  const value = cellValue(emp.id, dateStr, emp.shift_type)
+                  const isPending = pending[`${emp.id}_${dateStr}`] !== undefined
+                  const isWeekend = d.day() === 0 || d.day() === 6
+                  return (
+                    <td key={i} className={clsx('px-2 py-2 text-center align-middle',
+                      isWeekend ? 'bg-gray-50/30' : '')}>
+                      <select
+                        value={value}
+                        onChange={e => setCell(emp.id, dateStr, e.target.value as ShiftValue)}
+                        className={clsx(
+                          'w-full text-[11px] px-1.5 py-1 rounded-md border transition-all cursor-pointer',
+                          isPending ? 'border-[#1D9E75] ring-1 ring-[#1D9E75]/30' : 'border-black/[0.08]',
+                          value === 'default' ? 'bg-gray-50 text-gray-500' :
+                            'text-[#111110]'
+                        )}
+                        style={value !== 'default' ? {
+                          background: SHIFT_META[value]?.bg,
+                          color: SHIFT_META[value]?.color,
+                        } : undefined}
+                      >
+                        <option value="default">· ค่าเริ่มต้น</option>
+                        <option value="normal">ป กะปกติ</option>
+                        <option value="flexible">ย ยืดหยุ่น</option>
+                        <option value="dayoff">— วันหยุด</option>
+                      </select>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Save bar */}
+      {hasChanges && (
+        <div className="sticky bottom-4 mt-4 flex justify-end">
+          <div className="card flex items-center gap-3 shadow-md">
+            <span className="text-sm text-gray-600">
+              มีการเปลี่ยนแปลง {Object.keys(pending).length} ช่อง
+            </span>
+            <button onClick={discardChanges} className="btn text-xs">
+              <IconRefresh size={13} /> ยกเลิก
+            </button>
+            <button onClick={save} disabled={loading} className="btn btn-primary text-xs">
+              <IconDeviceFloppy size={13} /> {loading ? 'กำลังบันทึก...' : 'บันทึก'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

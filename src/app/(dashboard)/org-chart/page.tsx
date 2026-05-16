@@ -390,6 +390,7 @@ function DepartmentPanel({
   onChanged: () => void
 }) {
   const [showAdd, setShowAdd] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
   const [msg, setMsg] = useState({ text: '', ok: true })
@@ -397,12 +398,40 @@ function DepartmentPanel({
 
   if (!isHR) return null
 
+  const resetForm = () => {
+    setName(''); setDesc(''); setShowAdd(false); setEditingId(null); setMsg({ text: '', ok: true })
+  }
+
   const create = async () => {
     if (!name.trim()) { setMsg({ text: 'กรุณาระบุชื่อแผนก', ok: false }); return }
     setBusy(true)
     try {
       await departmentApi.create({ name: name.trim(), description: desc.trim() || undefined })
-      setName(''); setDesc(''); setShowAdd(false); setMsg({ text: '', ok: true })
+      resetForm()
+      onChanged()
+    } catch (e: any) {
+      setMsg({ text: e.response?.data?.message || 'เกิดข้อผิดพลาด', ok: false })
+    } finally { setBusy(false) }
+  }
+
+  const startEdit = (d: Department) => {
+    setEditingId(d.id)
+    setName(d.name)
+    setDesc(d.description || '')
+    setShowAdd(false)
+    setMsg({ text: '', ok: true })
+  }
+
+  const saveEdit = async () => {
+    if (!editingId) return
+    if (!name.trim()) { setMsg({ text: 'กรุณาระบุชื่อแผนก', ok: false }); return }
+    setBusy(true)
+    try {
+      await departmentApi.update(editingId, {
+        name: name.trim(),
+        description: desc.trim() || undefined,
+      })
+      resetForm()
       onChanged()
     } catch (e: any) {
       setMsg({ text: e.response?.data?.message || 'เกิดข้อผิดพลาด', ok: false })
@@ -419,6 +448,8 @@ function DepartmentPanel({
     }
   }
 
+  const editingDept = editingId ? departments.find(d => d.id === editingId) : null
+
   return (
     <div className="card mb-5">
       <div className="flex items-center justify-between mb-3">
@@ -426,25 +457,37 @@ function DepartmentPanel({
           <IconBuilding size={15} className="text-gray-400" />
           จัดการแผนก ({departments.length})
         </h2>
-        <button onClick={() => setShowAdd(!showAdd)} className="btn btn-primary text-xs">
-          <IconPlus size={13} /> เพิ่มแผนก
-        </button>
+        {!editingId && (
+          <button
+            onClick={() => { setShowAdd(!showAdd); setMsg({ text: '', ok: true }) }}
+            className="btn btn-primary text-xs"
+          >
+            <IconPlus size={13} /> เพิ่มแผนก
+          </button>
+        )}
       </div>
 
-      {showAdd && (
+      {(showAdd || editingId) && (
         <div className="bg-gray-50 rounded-[10px] p-3 mb-3 border border-black/[0.04]">
+          {editingId && (
+            <div className="text-[11px] text-gray-500 mb-2">
+              แก้ไขแผนก: <span className="font-medium text-[#111110]">{editingDept?.name}</span>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <input className="input" placeholder="ชื่อแผนก" value={name} onChange={e => setName(e.target.value)} />
             <input className="input" placeholder="คำอธิบาย (ไม่บังคับ)" value={desc} onChange={e => setDesc(e.target.value)} />
           </div>
           {msg.text && <p className={clsx('text-xs mt-2', msg.ok ? 'text-[#085041]' : 'text-red-600')}>{msg.text}</p>}
           <div className="flex gap-2 mt-2">
-            <button onClick={create} disabled={busy} className="btn btn-primary text-xs">
-              {busy ? 'กำลังสร้าง...' : 'สร้าง'}
+            <button
+              onClick={editingId ? saveEdit : create}
+              disabled={busy}
+              className="btn btn-primary text-xs"
+            >
+              {busy ? 'กำลังบันทึก...' : (editingId ? 'บันทึก' : 'สร้าง')}
             </button>
-            <button onClick={() => { setShowAdd(false); setName(''); setDesc(''); setMsg({ text: '', ok: true }) }} className="btn text-xs">
-              ยกเลิก
-            </button>
+            <button onClick={resetForm} className="btn text-xs">ยกเลิก</button>
           </div>
         </div>
       )}
@@ -454,11 +497,18 @@ function DepartmentPanel({
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {departments.map(d => (
-            <div key={d.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] bg-gray-50 border border-black/[0.04]">
+            <div key={d.id} className="group flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] bg-gray-50 border border-black/[0.04]">
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-medium text-[#111110] truncate">{d.name}</div>
                 <div className="text-[10px] text-gray-400">{d.member_count || 0} คน</div>
               </div>
+              <button
+                onClick={() => startEdit(d)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-[6px] text-gray-400 hover:bg-gray-100 hover:text-[#1D9E75]"
+                title="แก้ไขแผนก"
+              >
+                <IconEdit size={12} />
+              </button>
               {isOwner && (
                 <button
                   onClick={() => remove(d)}

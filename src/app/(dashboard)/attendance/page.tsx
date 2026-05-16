@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { attendanceApi } from '@/lib/api'
-import { IconMapPin, IconClockCheck, IconClockOff, IconAlertTriangle, IconCheck } from '@tabler/icons-react'
+import { useAuthStore } from '@/lib/store'
+import { IconMapPin, IconClockCheck, IconClockOff, IconAlertTriangle, IconCheck, IconCrown } from '@tabler/icons-react'
 import dayjs from 'dayjs'
 import clsx from 'clsx'
 
@@ -14,6 +15,8 @@ const STATUS_MAP: Record<string, { label: string; cls: string }> = {
 }
 
 export default function AttendancePage() {
+  const { user } = useAuthStore()
+  const isOwner = user?.role === 'owner'
   const [todayLog, setTodayLog] = useState<any>(null)
   const [history, setHistory] = useState<any[]>([])
   const [locStatus, setLocStatus] = useState<'idle' | 'getting' | 'ok' | 'denied' | 'far'>('idle')
@@ -79,7 +82,15 @@ export default function AttendancePage() {
         <p className="text-sm text-gray-500 mt-0.5">{dayjs().format('dddd D MMMM YYYY')}</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
+      {isOwner && (
+        <div className="card text-center py-10 mb-6">
+          <IconCrown size={28} className="mx-auto text-[#534AB7] mb-2" />
+          <p className="text-sm text-[#111110] font-medium">เจ้าของไม่ต้องลงทะเบียนเข้างาน</p>
+          <p className="text-xs text-gray-500 mt-1">หน้านี้ใช้สำหรับพนักงานเท่านั้น</p>
+        </div>
+      )}
+
+      <div className={clsx('grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6', isOwner && 'hidden')}>
         {/* Check-in card */}
         <div className="card">
           <h2 className="text-sm font-semibold text-[#111110] mb-4">เช็คอิน / เช็คเอาท์</h2>
@@ -188,7 +199,7 @@ export default function AttendancePage() {
       </div>
 
       {/* History table */}
-      <div className="card">
+      <div className={clsx('card', isOwner && 'hidden')}>
         <h2 className="text-sm font-semibold text-[#111110] mb-4">ประวัติลงเวลา</h2>
         {history.length === 0 ? (
           <div className="text-center py-8 text-gray-400 text-sm">ยังไม่มีประวัติ</div>

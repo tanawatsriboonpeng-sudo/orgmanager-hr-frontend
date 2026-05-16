@@ -10,16 +10,16 @@ import {
   IconSpeakerphone, IconHierarchy, IconUserSearch,
   IconBuilding, IconLogout, IconChevronRight,
   IconSettings, IconCrown, IconUsers, IconUser, IconKey,
-  IconMenu2, IconX
+  IconMenu2, IconX, IconCalendarTime
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 
 const ROLE_MENUS = {
   owner: [
+    // Owner ดูภาพรวม/อนุมัติ/จัดการเท่านั้น ไม่ลงเวลา ไม่ขอ OT ไม่มีกะ
     { href: '/dashboard', icon: IconLayoutDashboard, label: 'ภาพรวม' },
-    { href: '/attendance', icon: IconClock, label: 'การลงเวลา' },
     { href: '/leave', icon: IconCalendarOff, label: 'การลา' },
-    { href: '/ot', icon: IconClockPlus, label: 'OT' },
+    { href: '/shifts', icon: IconCalendarTime, label: 'จัดกะ' },
     { href: '/payroll', icon: IconReceipt2, label: 'เงินเดือน' },
     { href: '/kpi', icon: IconChartBar, label: 'KPI' },
     { href: '/projects', icon: IconClipboardList, label: 'โปรเจกต์' },
@@ -33,6 +33,7 @@ const ROLE_MENUS = {
     { href: '/attendance', icon: IconClock, label: 'ลงเวลา' },
     { href: '/leave', icon: IconCalendarOff, label: 'การลา' },
     { href: '/ot', icon: IconClockPlus, label: 'OT' },
+    { href: '/shifts', icon: IconCalendarTime, label: 'จัดกะ' },
     { href: '/payroll', icon: IconReceipt2, label: 'เงินเดือน' },
     { href: '/kpi', icon: IconChartBar, label: 'KPI' },
     { href: '/employees', icon: IconUsers, label: 'พนักงาน' },

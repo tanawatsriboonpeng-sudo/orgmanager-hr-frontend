@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { otApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
-import { IconPlus, IconCheck, IconX, IconClockPlus } from '@tabler/icons-react'
+import { IconPlus, IconCheck, IconX, IconClockPlus, IconCrown } from '@tabler/icons-react'
 import dayjs from 'dayjs'
 import clsx from 'clsx'
 
@@ -34,6 +34,7 @@ export default function OTPage() {
   const [msg, setMsg] = useState('')
   const [loading, setLoading] = useState(false)
   const isHR = user?.role === 'hr' || user?.role === 'owner'
+  const isOwner = user?.role === 'owner'
 
   const load = async () => {
     if (!isHR) return
@@ -74,12 +75,24 @@ export default function OTPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-[#111110]">OT — ล่วงเวลา</h1>
-          <p className="text-sm text-gray-500 mt-0.5">ยื่นคำขอทำงานล่วงเวลา</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {isOwner ? 'อนุมัติคำขอ OT' : 'ยื่นคำขอทำงานล่วงเวลา'}
+          </p>
         </div>
-        <button onClick={() => setShowForm(!showForm)} className="btn btn-primary text-sm">
-          <IconPlus size={15} /> ยื่นคำขอ OT
-        </button>
+        {!isOwner && (
+          <button onClick={() => setShowForm(!showForm)} className="btn btn-primary text-sm">
+            <IconPlus size={15} /> ยื่นคำขอ OT
+          </button>
+        )}
       </div>
+
+      {isOwner && (
+        <div className="card text-center py-8 mb-5">
+          <IconCrown size={26} className="mx-auto text-[#534AB7] mb-2" />
+          <p className="text-sm text-[#111110] font-medium">เจ้าของไม่ต้องขอ OT</p>
+          <p className="text-xs text-gray-500 mt-1">รายการ OT รออนุมัติแสดงด้านล่าง</p>
+        </div>
+      )}
 
       {/* Form */}
       {showForm && (
