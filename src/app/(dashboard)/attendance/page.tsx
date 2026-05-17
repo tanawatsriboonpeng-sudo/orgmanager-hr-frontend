@@ -425,16 +425,21 @@ export default function AttendancePage() {
                   สรุปเดือนนี้
                 </h2>
               </div>
-              <div className="grid grid-cols-2 gap-3 mb-3">
+              {/* 5 buckets. `present` from the backend includes almost_late
+                  rows (so the legacy attendanceRate stays meaningful), so
+                  the "ตรงเวลา" cell subtracts almostLate to avoid
+                  double-counting next to its own bucket. */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3">
                 {[
-                  { label: 'มาทำงาน', value: historySummary?.present ?? 0, color: '#1D9E75' },
-                  { label: 'มาสาย',   value: historySummary?.late ?? 0,    color: '#BA7517' },
-                  { label: 'ขาดงาน',  value: historySummary?.absent ?? 0,  color: '#E24B4A' },
-                  { label: 'ลางาน',   value: history.filter((r:any) => r.status === 'leave').length, color: '#534AB7' },
+                  { label: 'ตรงเวลา',  value: Math.max(0, (historySummary?.present ?? 0) - (historySummary?.almostLate ?? 0)), color: '#1D9E75' },
+                  { label: 'เกือบสาย', value: historySummary?.almostLate ?? 0, color: '#D9914A' },
+                  { label: 'มาสาย',    value: historySummary?.late ?? 0,       color: '#BA7517' },
+                  { label: 'ขาดงาน',   value: historySummary?.absent ?? 0,     color: '#E24B4A' },
+                  { label: 'ลางาน',    value: history.filter((r:any) => r.status === 'leave').length, color: '#534AB7' },
                 ].map(({ label, value, color }) => (
                   <div key={label} className="bg-gray-50 rounded-[10px] p-3 text-center">
                     <div className="text-2xl font-semibold tabular-nums" style={{ color }}>{value}</div>
-                    <div className="text-xs text-gray-500 mt-1">{label}</div>
+                    <div className="text-[11px] text-gray-500 mt-1 whitespace-nowrap">{label}</div>
                   </div>
                 ))}
               </div>
@@ -598,13 +603,17 @@ function DailySummaryCard({
         </div>
       </div>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-        <Stat label="ทั้งหมด" value={summary?.total ?? 0} color="#6B6A66" />
-        <Stat label="เข้าตรงเวลา" value={summary?.present ?? 0} color="#1D9E75" />
-        <Stat label="มาสาย" value={summary?.late ?? 0} color="#BA7517" />
+      {/* Stats grid. "เข้าตรงเวลา" subtracts almostLate because backend
+          `present` includes the warning bucket — keeps the legacy
+          attendanceRate meaningful while letting us show เกือบสาย as
+          its own number for HR. */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        <Stat label="ทั้งหมด"   value={summary?.total ?? 0} color="#6B6A66" />
+        <Stat label="ตรงเวลา"   value={Math.max(0, (summary?.present ?? 0) - (summary?.almostLate ?? 0))} color="#1D9E75" />
+        <Stat label="เกือบสาย"  value={summary?.almostLate ?? 0} color="#D9914A" />
+        <Stat label="มาสาย"     value={summary?.late ?? 0} color="#BA7517" />
         <Stat label="ยังไม่เข้า" value={summary?.notCheckedIn ?? 0} color="#E24B4A" />
-        <Stat label="ลา" value={summary?.leave ?? 0} color="#534AB7" />
+        <Stat label="ลา"        value={summary?.leave ?? 0} color="#534AB7" />
       </div>
 
       {summary && summary.total > 0 && (
