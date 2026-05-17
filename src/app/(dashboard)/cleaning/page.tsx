@@ -173,8 +173,10 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
 
-  // Inspector form state — keyed by session_item.id
-  const [formItems, setFormItems] = useState<Record<string, { doneBy: string; note: string }>>({})
+  // Inspector form state — keyed by session_item.id. notDone is the
+  // explicit "ไม่ได้ทำ" flag; when true the doneBy field is blanked and
+  // the dropdown disabled so the two never disagree.
+  const [formItems, setFormItems] = useState<Record<string, { doneBy: string; notDone: boolean; note: string }>>({})
   const [overallNote, setOverallNote] = useState('')
   const [hrNote, setHrNote] = useState('')
   const [employees, setEmployees] = useState<any[]>([])
@@ -195,6 +197,7 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
         for (const it of data.items) {
           next[it.id] = {
             doneBy: it.done_by_employee_id || '',
+            notDone: !!it.not_done,
             note: it.inspector_note || '',
           }
         }
@@ -232,7 +235,8 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
     try {
       const items: CleaningInspectItem[] = session.items.map(it => ({
         itemId: it.id,
-        doneByEmployeeId: formItems[it.id]?.doneBy || null,
+        doneByEmployeeId: formItems[it.id]?.notDone ? null : (formItems[it.id]?.doneBy || null),
+        notDone: !!formItems[it.id]?.notDone,
         note: formItems[it.id]?.note || null,
       }))
       await cleaningApi.inspect(session.id, items, overallNote || undefined)
@@ -360,7 +364,7 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
               onChange={e => setReassignTo(e.target.value)}
             >
               <option value="">— เลือกพนักงาน —</option>
-              {employees.filter(e => e.is_active).map(e => (
+              {employees.filter(e => e.is_active && e.role !== 'owner').map(e => (
                 <option key={e.id} value={e.id}>
                   {e.first_name} {e.last_name}
                 </option>
@@ -409,27 +413,58 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
                 </div>
 
                 {showForm ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 ml-6">
-                    <select
-                      className="input col-span-2 text-xs"
-                      value={filled?.doneBy || ''}
-                      onChange={e => setFormItems(p => ({ ...p, [it.id]: { ...p[it.id], doneBy: e.target.value, note: p[it.id]?.note || '' } }))}
-                    >
-                      <option value="">— คนทำ —</option>
-                      {employees.filter(e => e.is_active).map(e => (
-                        <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>
-                      ))}
-                    </select>
-                    <input
-                      className="input col-span-3 text-xs"
-                      placeholder="หมายเหตุ (ไม่บังคับ)"
-                      value={filled?.note || ''}
-                      onChange={e => setFormItems(p => ({ ...p, [it.id]: { ...p[it.id], note: e.target.value, doneBy: p[it.id]?.doneBy || '' } }))}
-                    />
+                  <div className="ml-6 space-y-2">
+                    {/* Segmented [ทำ] [ไม่ได้ทำ]. "ไม่ได้ทำ" disables the
+                        คนทำ dropdown and blanks the assignee so the two
+                        states don't disagree on submit. */}
+                    <div className="inline-flex rounded-md border border-black/[0.08] overflow-hidden text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setFormItems(p => ({ ...p, [it.id]: { doneBy: p[it.id]?.doneBy || '', notDone: false, note: p[it.id]?.note || '' } }))}
+                        className={clsx(
+                          'px-3 py-1.5 transition-colors',
+                          !filled?.notDone ? 'bg-[#1D9E75] text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                        )}
+                      >ทำ</button>
+                      <button
+                        type="button"
+                        onClick={() => setFormItems(p => ({ ...p, [it.id]: { doneBy: '', notDone: true, note: p[it.id]?.note || '' } }))}
+                        className={clsx(
+                          'px-3 py-1.5 transition-colors border-l border-black/[0.08]',
+                          filled?.notDone ? 'bg-red-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                        )}
+                      >ไม่ได้ทำ</button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                      <select
+                        className={clsx('input col-span-2 text-xs', filled?.notDone && 'opacity-50 cursor-not-allowed')}
+                        disabled={filled?.notDone}
+                        value={filled?.doneBy || ''}
+                        onChange={e => setFormItems(p => ({ ...p, [it.id]: { ...p[it.id], doneBy: e.target.value, notDone: false, note: p[it.id]?.note || '' } }))}
+                      >
+                        <option value="">— คนทำ —</option>
+                        {/* Owner is excluded from "คนทำ" — they don't
+                            participate in the rota (same rule as the
+                            inspector queue). */}
+                        {employees.filter(e => e.is_active && e.role !== 'owner').map(e => (
+                          <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>
+                        ))}
+                      </select>
+                      <input
+                        className="input col-span-3 text-xs"
+                        placeholder="หมายเหตุ (ไม่บังคับ)"
+                        value={filled?.note || ''}
+                        onChange={e => setFormItems(p => ({ ...p, [it.id]: { ...p[it.id], note: e.target.value, doneBy: p[it.id]?.doneBy || '', notDone: !!p[it.id]?.notDone } }))}
+                      />
+                    </div>
                   </div>
                 ) : (
                   <div className="ml-6 text-xs text-gray-600 flex items-center gap-2 flex-wrap">
-                    {it.done_by_employee_id ? (
+                    {it.not_done ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
+                        <IconX size={12} /> ไม่ได้ทำ
+                      </span>
+                    ) : it.done_by_employee_id ? (
                       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-50 text-green-800 border border-green-200">
                         <EmployeeAvatar
                           person={{
@@ -908,7 +943,10 @@ function InspectorQueueSection({ flash }: { flash: (text: string, ok?: boolean) 
   useEffect(() => { load() }, [])
 
   const inQueueIds = useMemo(() => new Set(queue.map(q => q.employee_id)), [queue])
-  const candidates = employees.filter(e => e.is_active && !inQueueIds.has(e.id))
+  // Owner is excluded from the cleaning rota by company policy. We also
+  // filter them out of the picker so HR can't add them by mistake; the
+  // backend skips owner rows even if they slip in.
+  const candidates = employees.filter(e => e.is_active && e.role !== 'owner' && !inQueueIds.has(e.id))
 
   const add = () => {
     if (!pickerId) return
@@ -1160,7 +1198,11 @@ function SessionDetailModal({
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-[#111110]">{it.item_name}</p>
                         <div className="text-xs text-gray-600 mt-1 flex items-center gap-2 flex-wrap">
-                          {it.done_by_employee_id ? (
+                          {it.not_done ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
+                              <IconX size={12} /> ไม่ได้ทำ
+                            </span>
+                          ) : it.done_by_employee_id ? (
                             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-50 text-green-800 border border-green-200">
                               <EmployeeAvatar
                                 person={{
