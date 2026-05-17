@@ -96,6 +96,17 @@ export const attendanceApi = {
   approveBackdate: (id: string) => api.post(`/attendance/backdate/${id}/approve`),
   rejectBackdate: (id: string, reason?: string) =>
     api.post(`/attendance/backdate/${id}/reject`, { reason }),
+
+  // HR / owner direct-write: log check-in / check-out for any employee
+  // on any past or current date. Either checkInTime or checkOutTime
+  // must be present.
+  adminRecord: (data: {
+    employeeId: string
+    date: string                                     // YYYY-MM-DD
+    checkInTime?: string                             // HH:MM
+    checkOutTime?: string                            // HH:MM
+    note?: string
+  }) => api.post('/attendance/admin-record', data),
 }
 
 // Leave APIs
@@ -700,6 +711,9 @@ export interface CleaningSessionItem {
   item_name: string
   display_order: number
   done_by_employee_id: string | null
+  // true = inspector marked this item as explicitly skipped ("ไม่ได้ทำ").
+  // Mutually exclusive with done_by_employee_id.
+  not_done: boolean
   inspector_note: string | null
   done_by_first_name?: string | null
   done_by_last_name?: string | null
@@ -745,7 +759,10 @@ export interface CleaningSessionListRow {
 }
 export interface CleaningInspectItem {
   itemId: string
+  // When notDone=true the backend force-nulls doneByEmployeeId, so the
+  // two fields never disagree even if the caller sends both.
   doneByEmployeeId?: string | null
+  notDone?: boolean
   note?: string | null
 }
 export const cleaningApi = {
