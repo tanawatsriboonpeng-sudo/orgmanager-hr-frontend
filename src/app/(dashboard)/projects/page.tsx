@@ -102,9 +102,22 @@ export default function ProjectsPage() {
     } finally { setLoading(false) }
   }
 
+  // Optimistic with rollback. The dropdown changes the row's status in
+  // local state immediately so the UI feels instant; if the API call
+  // fails (network, 403, validation) we revert to the prior status and
+  // surface the backend error message. Previously the catch was empty
+  // and a 403 looked exactly like success.
   const updateTaskStatus = async (taskId: string, status: TaskStatus) => {
-    await projectApi.updateTask(taskId, { status }).catch(() => {})
-    if (selectedId) loadTasks(selectedId)
+    const prev = tasks.find(t => t.id === taskId)?.status as TaskStatus | undefined
+    if (!prev || prev === status) return
+    setTasks(ts => ts.map(t => t.id === taskId ? { ...t, status } : t))
+    try {
+      await projectApi.updateTask(taskId, { status })
+      setMsg('')
+    } catch (e: any) {
+      setTasks(ts => ts.map(t => t.id === taskId ? { ...t, status: prev } : t))
+      setMsg(e?.response?.data?.message || 'อัปเดตสถานะไม่สำเร็จ')
+    }
   }
 
   const selectedProject = projects.find(p => p.id === selectedId)
@@ -139,6 +152,13 @@ export default function ProjectsPage() {
             <IconPlus size={15} /> เพิ่มงาน
           </button>
         </div>
+
+        {msg && !showTaskForm && (
+          <div className="mb-4 px-3 py-2 rounded-md bg-red-50 border border-red-200 text-xs text-red-700 flex items-center justify-between">
+            <span>{msg}</span>
+            <button onClick={() => setMsg('')} className="text-red-500 hover:text-red-700">ปิด</button>
+          </div>
+        )}
 
         {showTaskForm && (
           <div className="card mb-5">
