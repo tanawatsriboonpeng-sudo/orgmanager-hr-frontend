@@ -642,6 +642,7 @@ function DailySummaryCard({
 }) {
   const summary = data?.summary
   const records = data?.records || []
+  const rejectedRecords = data?.rejectedRecords || []
   // Inline reject flow: which row is being rejected, and the reason text.
   const [rejectingId, setRejectingId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState('')
@@ -785,7 +786,7 @@ function DailySummaryCard({
       )}
 
       {/* Expandable employee list */}
-      {records.length > 0 && (
+      {(records.length > 0 || rejectedRecords.length > 0) && (
         <>
           <button
             onClick={onToggle}
@@ -825,6 +826,35 @@ function DailySummaryCard({
                   </div>
                 )
               })}
+
+              {/* Rejected off-site requests — kept here so HR can see what
+                  they rejected today, but separated from the green/amber
+                  buckets above. Rendered muted because these don't count
+                  toward attendance. */}
+              {rejectedRecords.length > 0 && (
+                <div>
+                  <div className="text-[11px] font-medium text-gray-500 mb-1.5 flex items-center gap-1.5">
+                    <span className="badge badge-red">ปฏิเสธลงนอกสถานที่</span>
+                    <span>{rejectedRecords.length} คน</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {rejectedRecords.map((r: any) => (
+                      <div key={r.id} className="flex items-center gap-2 px-2 py-1.5 rounded-[8px] bg-red-50/40 border border-red-100 opacity-80">
+                        <EmployeeAvatar person={r} size={26} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-[#111110] truncate line-through">
+                            {r.first_name} {r.last_name}
+                          </div>
+                          <div className="text-[10px] text-gray-500 tabular-nums">
+                            {r.check_in_at ? dayjs(r.check_in_at).format('HH:mm') : '—'}
+                            {r.offsite_reject_reason && <span className="ml-1 text-red-500">· {r.offsite_reject_reason}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>
