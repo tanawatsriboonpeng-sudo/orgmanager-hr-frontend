@@ -1,13 +1,14 @@
 'use client'
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
-import { employeeApi, orgApi, type OrgSettings } from '@/lib/api'
+import { employeeApi, orgApi, officeLocationApi, type OrgSettings, type OfficeLocation } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
   IconUser, IconKey, IconMail, IconBuildingCommunity,
   IconBriefcase, IconShieldLock, IconChevronRight,
   IconCrown, IconUsers, IconPhoto, IconX, IconCheck,
-  IconPhone, IconEdit, IconUserCircle
+  IconPhone, IconEdit, IconUserCircle, IconMapPin, IconPlus,
+  IconTrash, IconCurrentLocation,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 
@@ -273,6 +274,9 @@ export default function SettingsPage() {
       {/* Company / Org Settings — owner only */}
       {role === 'owner' && <OrgSettingsCard />}
 
+      {/* Office Locations — owner only */}
+      {role === 'owner' && <OfficeLocationsCard />}
+
       {/* Security Section */}
       <div className="card">
         <h2 className="text-sm font-semibold text-[#111110] mb-3 flex items-center gap-2">
@@ -457,6 +461,282 @@ function OrgSettingsCard() {
           {localMsg.text}
         </div>
       )}
+    </div>
+  )
+}
+
+// ============================================================
+// OFFICE LOCATIONS (owner-only)
+// ============================================================
+// Multi-location replacement for the single COMPANY_LAT/LNG env vars.
+// Each row is a name + lat/lng + per-row radius (in meters). Edit /
+// disable / delete from this card. The check-in API allows the entry
+// if the user's GPS falls inside ANY active row's radius.
+
+function OfficeLocationsCard() {
+  const [rows, setRows] = useState<OfficeLocation[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState<string | 'new' | null>(null)
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const r = await officeLocationApi.list()
+      setRows(r.data.data || [])
+    } catch (e: any) {
+      setMsg({ text: e?.response?.data?.message || 'โหลดที่ตั้งไม่สำเร็จ', ok: false })
+    } finally { setLoading(false) }
+  }
+  useEffect(() => { load() }, [])
+
+  // Auto-dismiss success/info banner after 4s; errors persist until
+  // dismissed manually so the user can read them.
+  useEffect(() => {
+    if (!msg || !msg.ok) return
+    const t = setTimeout(() => setMsg(null), 4000)
+    return () => clearTimeout(t)
+  }, [msg])
+
+  const remove = async (loc: OfficeLocation) => {
+    if (!confirm(`ลบ "${loc.name}"? พนักงานจะลงเวลาจากจุดนี้ไม่ได้ทันที`)) return
+    try {
+      await officeLocationApi.delete(loc.id)
+      setMsg({ text: 'ลบแล้ว', ok: true })
+      load()
+    } catch (e: any) {
+      setMsg({ text: e?.response?.data?.message || 'ลบไม่สำเร็จ', ok: false })
+    }
+  }
+
+  const toggle = async (loc: OfficeLocation) => {
+    try {
+      await officeLocationApi.update(loc.id, { isActive: !loc.is_active })
+      load()
+    } catch (e: any) {
+      setMsg({ text: e?.response?.data?.message || 'เปลี่ยนสถานะไม่สำเร็จ', ok: false })
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-[#111110] flex items-center gap-2">
+          <IconMapPin size={15} className="text-gray-400" />
+          ที่ตั้งสำนักงาน (ลงเวลา)
+        </h2>
+        {editing !== 'new' && (
+          <button
+            onClick={() => setEditing('new')}
+            className="btn btn-primary text-xs"
+          >
+            <IconPlus size={13} /> เพิ่มสถานที่
+          </button>
+        )}
+      </div>
+
+      <p className="text-xs text-gray-500 mb-3">
+        พนักงานจะลงเวลาได้เมื่ออยู่ในรัศมีของอย่างน้อย 1 สถานที่ที่เปิดใช้งาน
+      </p>
+
+      {msg && (
+        <div className={clsx(
+          'mb-3 px-3 py-2 rounded-md text-xs flex items-center justify-between border',
+          msg.ok ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
+        )}>
+          <span>{msg.text}</span>
+          <button onClick={() => setMsg(null)} className="opacity-70 hover:opacity-100">ปิด</button>
+        </div>
+      )}
+
+      {/* New-row form */}
+      {editing === 'new' && (
+        <OfficeLocationForm
+          onCancel={() => setEditing(null)}
+          onSaved={() => { setEditing(null); setMsg({ text: 'เพิ่มแล้ว', ok: true }); load() }}
+          onError={(text) => setMsg({ text, ok: false })}
+        />
+      )}
+
+      {loading ? (
+        <p className="text-xs text-gray-500 mt-2">กำลังโหลด…</p>
+      ) : rows.length === 0 && editing !== 'new' ? (
+        <p className="text-xs text-gray-500 text-center py-4">
+          ยังไม่มีสถานที่ — ระบบใช้ค่า env เริ่มต้น (สำนักงานหลัก)<br />
+          เพิ่มสถานที่แรกเพื่อ override
+        </p>
+      ) : (
+        <div className="space-y-2 mt-2">
+          {rows.map(loc => (
+            editing === loc.id ? (
+              <OfficeLocationForm
+                key={loc.id}
+                initial={loc}
+                onCancel={() => setEditing(null)}
+                onSaved={() => { setEditing(null); setMsg({ text: 'บันทึกแล้ว', ok: true }); load() }}
+                onError={(text) => setMsg({ text, ok: false })}
+              />
+            ) : (
+              <div
+                key={loc.id}
+                className={clsx(
+                  'flex items-center justify-between gap-3 px-3 py-2.5 rounded-md border',
+                  loc.is_active ? 'border-black/[0.06] bg-white' : 'border-black/[0.04] bg-gray-50 opacity-60'
+                )}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[#111110] truncate">{loc.name}</p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {Number(loc.lat).toFixed(6)}, {Number(loc.lng).toFixed(6)} · รัศมี {loc.radius_meters} ม.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => toggle(loc)}
+                    className="text-[11px] px-2 py-1 rounded border border-black/[0.08] hover:bg-gray-50"
+                  >
+                    {loc.is_active ? 'ปิด' : 'เปิด'}
+                  </button>
+                  <button
+                    onClick={() => setEditing(loc.id)}
+                    className="p-1.5 rounded hover:bg-gray-100"
+                    title="แก้ไข"
+                  >
+                    <IconEdit size={14} className="text-gray-500" />
+                  </button>
+                  <button
+                    onClick={() => remove(loc)}
+                    className="p-1.5 rounded hover:bg-red-50"
+                    title="ลบ"
+                  >
+                    <IconTrash size={14} className="text-red-500" />
+                  </button>
+                </div>
+              </div>
+            )
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function OfficeLocationForm({ initial, onCancel, onSaved, onError }: {
+  initial?: OfficeLocation
+  onCancel: () => void
+  onSaved: () => void
+  onError: (text: string) => void
+}) {
+  const [name, setName] = useState(initial?.name || '')
+  const [lat, setLat] = useState<string>(initial ? String(initial.lat) : '')
+  const [lng, setLng] = useState<string>(initial ? String(initial.lng) : '')
+  const [radius, setRadius] = useState<number>(initial?.radius_meters ?? 60)
+  const [saving, setSaving] = useState(false)
+  const [geoBusy, setGeoBusy] = useState(false)
+
+  const useCurrentLocation = () => {
+    if (!('geolocation' in navigator)) {
+      onError('เบราว์เซอร์นี้ไม่รองรับ GPS')
+      return
+    }
+    setGeoBusy(true)
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setLat(pos.coords.latitude.toFixed(6))
+        setLng(pos.coords.longitude.toFixed(6))
+        setGeoBusy(false)
+      },
+      err => {
+        setGeoBusy(false)
+        onError(err.code === err.PERMISSION_DENIED
+          ? 'ไม่ได้รับสิทธิ์ใช้ GPS — เปิดสิทธิ์ในเบราว์เซอร์ก่อน'
+          : 'อ่าน GPS ไม่สำเร็จ')
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 }
+    )
+  }
+
+  const submit = async () => {
+    if (!name.trim()) { onError('กรุณาระบุชื่อสถานที่'); return }
+    const latN = Number(lat), lngN = Number(lng)
+    if (!Number.isFinite(latN) || latN < -90 || latN > 90) { onError('latitude ต้องอยู่ในช่วง -90 ถึง 90'); return }
+    if (!Number.isFinite(lngN) || lngN < -180 || lngN > 180) { onError('longitude ต้องอยู่ในช่วง -180 ถึง 180'); return }
+    if (!Number.isFinite(radius) || radius < 10 || radius > 5000) { onError('รัศมีต้องอยู่ในช่วง 10–5000 เมตร'); return }
+    setSaving(true)
+    try {
+      const payload = { name: name.trim(), lat: latN, lng: lngN, radiusMeters: radius }
+      if (initial) await officeLocationApi.update(initial.id, payload)
+      else await officeLocationApi.create(payload)
+      onSaved()
+    } catch (e: any) {
+      onError(e?.response?.data?.message || 'บันทึกไม่สำเร็จ')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="rounded-md border border-[#1D9E75]/30 bg-green-50/20 p-3 space-y-3">
+      <div>
+        <label className="label">ชื่อสถานที่</label>
+        <input
+          className="input text-sm"
+          placeholder="เช่น สำนักงานใหญ่ / สาขาเชียงใหม่"
+          value={name}
+          onChange={e => setName(e.target.value)}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="label">Latitude</label>
+          <input
+            className="input text-sm font-mono"
+            placeholder="13.756331"
+            value={lat}
+            onChange={e => setLat(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label">Longitude</label>
+          <input
+            className="input text-sm font-mono"
+            placeholder="100.501765"
+            value={lng}
+            onChange={e => setLng(e.target.value)}
+          />
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={useCurrentLocation}
+        disabled={geoBusy}
+        className="text-xs text-[#1D9E75] hover:underline flex items-center gap-1"
+      >
+        <IconCurrentLocation size={13} />
+        {geoBusy ? 'กำลังอ่าน GPS…' : 'ใช้ตำแหน่งปัจจุบัน'}
+      </button>
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="label !mb-0">รัศมี (เมตร)</label>
+          <span className="text-sm font-mono text-[#1D9E75]">{radius} ม.</span>
+        </div>
+        <input
+          type="range"
+          min={10}
+          max={2000}
+          step={10}
+          value={radius}
+          onChange={e => setRadius(parseInt(e.target.value, 10))}
+          className="w-full accent-[#1D9E75]"
+        />
+        <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+          <span>10 ม.</span><span>500</span><span>1000</span><span>2000 ม.</span>
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 pt-1">
+        <button onClick={onCancel} className="btn text-sm">ยกเลิก</button>
+        <button onClick={submit} disabled={saving} className="btn btn-primary text-sm">
+          {saving ? 'กำลังบันทึก…' : initial ? 'บันทึก' : 'เพิ่ม'}
+        </button>
+      </div>
     </div>
   )
 }

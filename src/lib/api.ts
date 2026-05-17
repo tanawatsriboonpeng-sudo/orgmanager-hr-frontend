@@ -793,4 +793,31 @@ export const cleaningApi = {
     api.post(`/cleaning/sessions/${id}/reject`, { hrNotes }),
 }
 
+// Office Locations APIs — owner-managed list of allowed GPS check-in
+// spots, each with its own radius. Anyone authenticated can read; only
+// owner can mutate (enforced server-side).
+export interface OfficeLocation {
+  id: string
+  name: string
+  lat: number
+  lng: number
+  radius_meters: number
+  is_active: boolean
+  created_at?: string
+  updated_at?: string
+}
+export interface OfficeLocationUpsert {
+  name?: string
+  lat?: number
+  lng?: number
+  radiusMeters?: number
+  isActive?: boolean
+}
+export const officeLocationApi = {
+  list: () => api.get('/office-locations'),
+  create: (data: OfficeLocationUpsert) => api.post('/office-locations', data),
+  update: (id: string, data: OfficeLocationUpsert) => api.patch(`/office-locations/${id}`, data),
+  delete: (id: string) => api.delete(`/office-locations/${id}`),
+}
+
 export default api
