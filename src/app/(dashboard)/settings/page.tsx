@@ -974,8 +974,9 @@ function DataRetentionCard() {
       const total = (s?.selfies_cleared || 0)
         + (s?.offsite_selfies_cleared || 0)
         + (s?.backdate_attachments_cleared || 0)
+        + (s?.leave_documents_cleared || 0)
       setMsg({
-        text: `ล้างแล้ว — รูป ${total}, แจ้งเตือน ${s?.notifications_deleted || 0}, audit ${s?.audit_logs_deleted || 0}`,
+        text: `ล้างแล้ว — รูป/ไฟล์ ${total}, แจ้งเตือน ${s?.notifications_deleted || 0}, audit ${s?.audit_logs_deleted || 0}`,
         ok: true,
       })
       await load()
@@ -1073,7 +1074,8 @@ function DataRetentionCard() {
             <div className="text-gray-500 leading-relaxed">
               รูปเช็คอิน {last.selfies_cleared || 0} ·
               รูปลงนอกสถานที่ {last.offsite_selfies_cleared || 0} ·
-              ไฟล์แนบ {last.backdate_attachments_cleared || 0} ·
+              ไฟล์ขอย้อนหลัง {last.backdate_attachments_cleared || 0} ·
+              หลักฐานการลา {last.leave_documents_cleared || 0} ·
               แจ้งเตือน {last.notifications_deleted || 0} ·
               audit {last.audit_logs_deleted || 0} ·
               token หมดอายุ {last.expired_refresh_tokens_deleted || 0}

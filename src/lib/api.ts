@@ -87,6 +87,7 @@ export interface RetentionPolicy {
     selfies_cleared?: number
     offsite_selfies_cleared?: number
     backdate_attachments_cleared?: number
+    leave_documents_cleared?: number
     notifications_deleted?: number
     audit_logs_deleted?: number
     expired_refresh_tokens_deleted?: number
