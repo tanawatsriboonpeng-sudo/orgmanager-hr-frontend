@@ -104,6 +104,10 @@ export default function LeavePage() {
   const [allReqStatus, setAllReqStatus] = useState<StatusFilter>('all')
   const [adminRecordOpen, setAdminRecordOpen] = useState(false)
   const [quotaEditing, setQuotaEditing] = useState<LeaveQuotaRow | null>(null)
+  // Always-available "set quota for any employee" modal — works even
+  // when the team-quota table is empty, so HR doesn't need to find a
+  // clickable number first.
+  const [setQuotaOpen, setSetQuotaOpen] = useState(false)
   // Doc preview modal — both viewers and HR queue use it.
   const [docPreview, setDocPreview] = useState<string | null>(null)
 
@@ -800,6 +804,13 @@ export default function LeavePage() {
             </h2>
             <div className="flex items-center gap-2 flex-wrap">
               <button
+                onClick={() => setSetQuotaOpen(true)}
+                className="btn btn-primary text-xs"
+                title="ปรับโควตาของพนักงานคนใดก็ได้ — ใช้ได้ทุกเมื่อ"
+              >
+                <IconEdit size={13} /> ปรับโควตา
+              </button>
+              <button
                 onClick={seedTeamQuotas}
                 disabled={seedingQuotas}
                 className="btn text-xs"
@@ -825,15 +836,23 @@ export default function LeavePage() {
             <div className="py-8 text-center">
               <p className="text-sm text-gray-500 mb-1">ยังไม่มีโควตาในปี {teamYear + 543}</p>
               <p className="text-[11px] text-gray-400 mb-4">
-                ใช้ค่า default จากการ์ด "ประเภทการลา" — กดปุ่มเพื่อสร้างให้ทุกคนทันที
+                ใช้ค่า default จากการ์ด "ประเภทการลา" หรือปรับเป็นรายคนก็ได้
               </p>
-              <button
-                onClick={seedTeamQuotas}
-                disabled={seedingQuotas}
-                className="btn btn-primary text-sm"
-              >
-                <IconPlus size={14} /> {seedingQuotas ? 'กำลังสร้าง…' : `สร้างโควตาเริ่มต้นปี ${teamYear + 543}`}
-              </button>
+              <div className="flex items-center justify-center gap-2 flex-wrap">
+                <button
+                  onClick={seedTeamQuotas}
+                  disabled={seedingQuotas}
+                  className="btn btn-primary text-sm"
+                >
+                  <IconPlus size={14} /> {seedingQuotas ? 'กำลังสร้าง…' : `สร้างให้ทุกคน`}
+                </button>
+                <button
+                  onClick={() => setSetQuotaOpen(true)}
+                  className="btn text-sm"
+                >
+                  <IconEdit size={14} /> ปรับเป็นรายคน
+                </button>
+              </div>
             </div>
           ) : (
             <div className="overflow-x-auto -mx-4 px-4">
@@ -1021,6 +1040,18 @@ export default function LeavePage() {
           onSaved={() => {
             setQuotaEditing(null)
             flash('ปรับโควตาแล้ว')
+            loadTeamQuotas(teamYear)
+          }}
+          onError={(text) => flash(text, false)}
+        />
+      )}
+      {setQuotaOpen && (
+        <AdminSetQuotaModal
+          year={teamYear}
+          onClose={() => setSetQuotaOpen(false)}
+          onSaved={() => {
+            setSetQuotaOpen(false)
+            flash('บันทึกโควตาแล้ว')
             loadTeamQuotas(teamYear)
           }}
           onError={(text) => flash(text, false)}
@@ -1305,6 +1336,177 @@ function QuotaEditModal({ row, year, onClose, onSaved, onError }: {
         <div className="px-5 py-3 border-t border-black/[0.06] flex justify-end gap-2">
           <button onClick={onClose} className="btn text-sm">ยกเลิก</button>
           <button onClick={submit} disabled={saving} className="btn btn-primary text-sm">
+            {saving ? 'กำลังบันทึก…' : 'บันทึก'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// ADMIN SET-QUOTA (HR/owner pick any employee + type)
+// ============================================================
+// Companion to QuotaEditModal — that one only opens by clicking an
+// existing cell, so it can't help when the table is empty or the user
+// wants to add a quota for someone who's never appeared. This modal is
+// reachable from a dedicated button and works for the entire upsert
+// space (employee × leave_type × year).
+
+function AdminSetQuotaModal({ year, onClose, onSaved, onError }: {
+  year: number
+  onClose: () => void
+  onSaved: () => void
+  onError: (text: string) => void
+}) {
+  const [types, setTypes] = useState<LeaveType[]>([])
+  const [employees, setEmployees] = useState<any[]>([])
+  const [allQuotas, setAllQuotas] = useState<LeaveQuotaRow[]>([])
+  const [employeeId, setEmployeeId] = useState('')
+  const [leaveTypeId, setLeaveTypeId] = useState('')
+  const [days, setDays] = useState<number | ''>('')
+  const [saving, setSaving] = useState(false)
+  const [localErr, setLocalErr] = useState('')
+
+  useEffect(() => {
+    (async () => {
+      const [tRes, eRes, qRes] = await Promise.allSettled([
+        leaveApi.allTypes(),
+        employeeApi.list(),
+        leaveApi.allQuotas(year),
+      ])
+      if (tRes.status === 'fulfilled') setTypes(tRes.value.data.data || [])
+      if (eRes.status === 'fulfilled') {
+        const list: any[] = eRes.value.data?.data || []
+        setEmployees(list.filter((e: any) => e.role !== 'owner' && e.is_active !== false))
+      }
+      if (qRes.status === 'fulfilled') setAllQuotas(qRes.value.data?.data || [])
+    })()
+  }, [year])
+
+  // Find the existing quota row for the chosen (employee, type) so we
+  // can pre-fill the input with the current total and show "used N
+  // days" so HR knows what they're overriding.
+  const existing = useMemo(
+    () => allQuotas.find(q => q.employee_id === employeeId && q.leave_type_id === leaveTypeId),
+    [allQuotas, employeeId, leaveTypeId]
+  )
+  const selType = types.find(t => t.id === leaveTypeId)
+  const used = existing ? Number(existing.used_days) || 0 : 0
+
+  // Whenever the picker changes, refresh the days input to the existing
+  // value (or the type's default for new rows).
+  useEffect(() => {
+    if (!leaveTypeId) { setDays(''); return }
+    if (existing) setDays(Number(existing.total_days) || 0)
+    else if (selType) setDays(Number(selType.days_per_year) || 0)
+    else setDays('')
+    setLocalErr('')
+  }, [employeeId, leaveTypeId, existing, selType])
+
+  const submit = async () => {
+    if (!employeeId || !leaveTypeId) { setLocalErr('กรุณาเลือกพนักงานและประเภทการลา'); return }
+    const total = typeof days === 'number' ? days : parseInt(String(days), 10)
+    if (!Number.isFinite(total) || total < 0 || total > 365) {
+      setLocalErr('จำนวนวันต้องอยู่ระหว่าง 0–365'); return
+    }
+    if (used > 0 && total < used) {
+      setLocalErr(`ตั้งได้ขั้นต่ำ ${used} วัน (ใช้ไปแล้ว)`); return
+    }
+    setSaving(true); setLocalErr('')
+    try {
+      await leaveApi.setQuota({ employeeId, leaveTypeId, year, totalDays: total })
+      onSaved()
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || 'บันทึกไม่สำเร็จ'
+      setLocalErr(msg); onError(msg)
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div onClick={onClose} className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-[14px] shadow-xl w-full max-w-md max-h-[92vh] overflow-y-auto">
+        <div className="px-5 py-4 border-b border-black/[0.06] flex items-center justify-between">
+          <h3 className="text-base font-semibold flex items-center gap-2">
+            <IconEdit size={16} className="text-[#1D9E75]" />
+            ปรับโควตาให้พนักงาน
+          </h3>
+          <button onClick={onClose}><IconX size={18} /></button>
+        </div>
+
+        <div className="p-5 space-y-3">
+          <div className="text-[11px] text-gray-500 bg-gray-50 border border-black/[0.05] rounded-md px-3 py-2">
+            เลือกพนักงาน + ประเภทการลา → ใส่จำนวนวัน
+            <span className="block mt-0.5 text-gray-400">
+              ปี {year + 543} · ถ้ามีอยู่แล้วจะอัปเดต ถ้ายังไม่มีจะสร้างใหม่
+            </span>
+          </div>
+
+          <div>
+            <label className="label">พนักงาน</label>
+            <select className="input" value={employeeId} onChange={e => setEmployeeId(e.target.value)}>
+              <option value="">— เลือกพนักงาน —</option>
+              {employees.map(e => (
+                <option key={e.id} value={e.id}>
+                  {e.first_name} {e.last_name}
+                  {e.department_name ? ` · ${e.department_name}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="label">ประเภทการลา</label>
+            <select className="input" value={leaveTypeId} onChange={e => setLeaveTypeId(e.target.value)}>
+              <option value="">— เลือกประเภท —</option>
+              {types.map(t => (
+                <option key={t.id} value={t.id} disabled={!t.is_active}>
+                  {t.name}{!t.is_active ? ' (ปิดใช้งาน)' : ''}
+                </option>
+              ))}
+            </select>
+            {selType && (
+              <p className="text-[11px] text-gray-400 mt-1">
+                Default ของบริษัทสำหรับประเภทนี้: {selType.days_per_year ?? 0} วัน/ปี
+              </p>
+            )}
+          </div>
+
+          {existing && (
+            <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-3 py-2">
+              คนนี้มีโควตา <b>{existing.total_days}</b> วัน อยู่แล้วในปีนี้ — ใช้ไปแล้ว {used} วัน
+            </div>
+          )}
+
+          <div>
+            <label className="label">จำนวนวันทั้งหมด</label>
+            <input
+              type="number"
+              className="input"
+              min={used > 0 ? used : 0}
+              max={365}
+              value={days}
+              onChange={e => {
+                const v = e.target.value
+                setDays(v === '' ? '' : parseInt(v, 10) || 0)
+              }}
+              placeholder="—"
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              {used > 0
+                ? `ขั้นต่ำ ${used} วัน (ใช้ไปแล้ว)`
+                : 'พิมพ์จำนวนวัน — ลดต่ำกว่าที่ใช้ไปแล้วไม่ได้'}
+            </p>
+          </div>
+
+          {localErr && (
+            <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">{localErr}</div>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-black/[0.06] flex justify-end gap-2">
+          <button onClick={onClose} className="btn text-sm">ยกเลิก</button>
+          <button onClick={submit} disabled={saving || !employeeId || !leaveTypeId} className="btn btn-primary text-sm">
             {saving ? 'กำลังบันทึก…' : 'บันทึก'}
           </button>
         </div>
