@@ -839,36 +839,40 @@ function DailySummaryCard({
                     <span className="badge badge-gray">ไม่อนุมัติคำขอลงนอกสถานที่</span>
                     <span>{rejectedRecords.length} รายการ</span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {rejectedRecords.map((r: any) => (
-                      <div key={r.id} className="flex items-start gap-2.5 px-2.5 py-2 rounded-[8px] bg-gray-50/80 border border-black/[0.05]">
+                      <div
+                        key={r.id}
+                        className="flex items-start gap-2.5 px-3 py-2.5 rounded-[10px] bg-white border border-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+                        style={{ borderLeft: '3px solid #94a3b8' }}
+                      >
                         {r.check_in_selfie ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={r.check_in_selfie}
                             alt=""
-                            className="w-9 h-9 rounded-[6px] object-cover border border-black/[0.05] flex-shrink-0"
+                            className="w-10 h-10 rounded-[8px] object-cover border border-black/[0.05] flex-shrink-0"
                           />
                         ) : (
-                          <EmployeeAvatar person={r} size={36} />
+                          <EmployeeAvatar person={r} size={40} />
                         )}
                         <div className="flex-1 min-w-0 leading-snug">
                           <div className="flex items-baseline gap-1.5 flex-wrap">
-                            <span className="text-xs font-medium text-[#111110] truncate">
+                            <span className="text-[13px] font-medium text-[#111110] truncate">
                               {r.first_name} {r.last_name}
                             </span>
-                            <span className="text-[10px] text-gray-400 tabular-nums">
-                              {r.check_in_at ? dayjs(r.check_in_at).format('HH:mm') : '—'}
+                            <span className="text-[11px] text-gray-400 tabular-nums">
+                              · {r.check_in_at ? dayjs(r.check_in_at).format('HH:mm') : '—'}
                             </span>
                           </div>
                           {r.offsite_reason && (
-                            <div className="text-[10px] text-gray-500 mt-0.5 truncate" title={r.offsite_reason}>
-                              คำขอ: {r.offsite_reason}
+                            <div className="text-[11px] text-gray-600 mt-1 truncate" title={r.offsite_reason}>
+                              <span className="text-gray-400">คำขอ:</span> {r.offsite_reason}
                             </div>
                           )}
                           {r.offsite_reject_reason && (
-                            <div className="text-[10px] text-gray-500 mt-0.5 truncate" title={r.offsite_reject_reason}>
-                              หมายเหตุ: {r.offsite_reject_reason}
+                            <div className="text-[11px] text-gray-600 mt-0.5 truncate" title={r.offsite_reject_reason}>
+                              <span className="text-gray-400">หมายเหตุ:</span> {r.offsite_reject_reason}
                             </div>
                           )}
                         </div>
