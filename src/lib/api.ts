@@ -177,18 +177,69 @@ export interface LeaveQuotaRow {
   leave_type_code?: string
 }
 
+export interface LeaveType {
+  id: string
+  name: string
+  code: string
+  days_per_year: number
+  carry_over_days: number
+  advance_notice_days: number
+  requires_document: boolean
+  is_active: boolean
+}
+
 export const leaveApi = {
-  types: () => api.get('/leave/types'),
+  // Active types — what the request form should populate. HR/owner
+  // managing the settings card should call allTypes() instead so they
+  // can see and re-enable disabled ones.
+  types: () => api.get<{ success: boolean; data: LeaveType[] }>('/leave/types'),
+  allTypes: () => api.get<{ success: boolean; data: LeaveType[] }>('/leave/types-all'),
+  createType: (body: {
+    name: string; code: string; daysPerYear: number;
+    carryOverDays?: number; advanceNoticeDays?: number; requiresDocument?: boolean;
+  }) => api.post('/leave/types', body),
+  updateType: (id: string, body: Partial<{
+    name: string; code: string; daysPerYear: number;
+    carryOverDays: number; advanceNoticeDays: number;
+    requiresDocument: boolean; isActive: boolean;
+  }>) => api.patch(`/leave/types/${id}`, body),
+  deleteType: (id: string) => api.delete<{
+    success: boolean; soft: boolean; message: string
+  }>(`/leave/types/${id}`),
+
   myQuota: (year?: number) => api.get('/leave/my-quota', { params: { year } }),
   // HR/owner overview — one row per (employee × leave_type) for a year.
   allQuotas: (year?: number) => api.get('/leave/all-quotas', { params: { year } }),
+  // Upsert quota — pass year + totalDays; pair with employeeId/leaveTypeId
+  // for the (employee × type × year) tuple.
+  setQuota: (body: { employeeId: string; leaveTypeId: string; year: number; totalDays: number }) =>
+    api.put('/leave/quotas', body),
+
   myHistory: () => api.get('/leave/my-history'),
-  create: (data: { leaveTypeId: string; startDate: string; endDate: string; reason: string }) =>
-    api.post('/leave/request', data),
+  // HR/owner organization-wide leave request feed. All filters optional.
+  allRequests: (params?: {
+    status?: 'pending' | 'approved' | 'rejected' | 'cancelled'
+    year?: number; departmentId?: string; employeeId?: string; limit?: number
+  }) => api.get('/leave/all-requests', { params }),
+
+  // Employee self-service. document is optional unless leave_type
+  // requires_document=true (backend enforces — frontend can also guard).
+  create: (data: {
+    leaveTypeId: string; startDate: string; endDate: string;
+    reason: string; document?: string
+  }) => api.post('/leave/request', data),
   cancel: (id: string) => api.post(`/leave/${id}/cancel`),
   pending: () => api.get('/leave/pending'),
   approve: (id: string, action: 'approved' | 'rejected', hrNotes?: string) =>
     api.patch(`/leave/${id}/approve`, { action, hrNotes }),
+
+  // HR/owner backdate. deductQuota defaults to true server-side; pass
+  // false to log a leave without consuming the employee's allowance.
+  adminRecord: (body: {
+    employeeId: string; leaveTypeId: string;
+    startDate: string; endDate: string; reason: string;
+    document?: string; deductQuota?: boolean; hrNotes?: string;
+  }) => api.post('/leave/admin-record', body),
 }
 
 // OT APIs
