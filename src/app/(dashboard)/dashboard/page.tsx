@@ -253,7 +253,13 @@ export default function DashboardPage() {
               {greetingForHour()}
             </div>
             <h1 className="text-2xl font-semibold text-[#111110] leading-tight">
-              {user?.role === 'owner' ? 'คุณ' : ''}{user?.firstName}
+              {/* /auth/login returns camelCase (firstName), /auth/me
+                  returns snake_case (first_name) — after a page refresh
+                  the store has the latter, so accept both. fullName is
+                  the final fallback. */}
+              {user?.role === 'owner' ? 'คุณ' : ''}{
+                user?.firstName || user?.first_name || user?.fullName || ''
+              }
             </h1>
             <p className="text-xs text-gray-500 mt-1">{today}</p>
           </div>

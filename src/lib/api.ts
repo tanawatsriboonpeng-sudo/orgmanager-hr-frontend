@@ -482,11 +482,21 @@ export const shiftConfigApi = {
 }
 
 // Holiday APIs
+export interface Holiday {
+  id: string
+  name: string
+  date: string         // YYYY-MM-DD
+  type: 'national' | 'religious' | 'company' | string
+  year: number
+  created_by?: string | null
+  created_at?: string
+}
 export const holidayApi = {
-  list: (year?: number) => api.get('/holidays', { params: { year } }),
-  create: (data: { name: string; date: string; type: string }) =>
-    api.post('/holidays', data),
-  delete: (id: string) => api.delete(`/holidays/${id}`),
+  list: (year?: number) =>
+    api.get<{ success: boolean; data: Holiday[] }>('/holidays', { params: { year } }),
+  create: (data: { name: string; date: string; type?: string }) =>
+    api.post<{ success: boolean; data: Holiday }>('/holidays', data),
+  delete: (id: string) => api.delete<{ success: boolean }>(`/holidays/${id}`),
 }
 
 // Announcement APIs

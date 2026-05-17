@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useEffect, useRef, useState } from 'react'
-import { employeeApi, orgApi, officeLocationApi, lineAuthApi, retentionApi, leaveApi, type OrgSettings, type OfficeLocation, type RetentionPolicy, type LeaveType } from '@/lib/api'
+import { employeeApi, orgApi, officeLocationApi, lineAuthApi, retentionApi, leaveApi, holidayApi, type OrgSettings, type OfficeLocation, type RetentionPolicy, type LeaveType, type Holiday } from '@/lib/api'
 
 // Leaflet hits window on import, so load the map only on the client.
 // The lazy chunk also keeps the initial /settings bundle slim.
@@ -297,6 +297,13 @@ export default function SettingsPage() {
       {/* Leave-type management moved to /leave page — kept under the
           team-quota table there so HR can add a column and see it
           appear in the table immediately. */}
+
+      {/* Company holidays — HR + owner. Owner-managed list of
+          public + company holidays per calendar year; consumed by
+          /leave (skip non-working days), /attendance daily-summary
+          (drop holidays from notCheckedIn), and the upcoming
+          /calendar page. */}
+      {(role === 'owner' || role === 'hr') && <HolidaysCard />}
 
       {/* Data retention — owner only */}
       {role === 'owner' && <DataRetentionCard />}
@@ -1133,4 +1140,231 @@ function RetentionField({ label, help, value, onChange, min, max, suggested }: {
       )}
     </div>
   )
+}
+
+// ============================================================
+// COMPANY HOLIDAYS (HR + owner)
+// ============================================================
+// Per-calendar-year list of public + company holidays. Owner/HR adds
+// each one manually (no auto-import). Consumed by:
+//   • /leave: skip non-working days when counting leave duration
+//   • /attendance daily-summary: drop holidays from notCheckedIn so
+//     Songkran doesn't read as "everyone's missing"
+//   • /calendar (upcoming): mark holiday cells distinctly
+//
+// We keep the year selector front and center because the typical
+// flow is "set up next year's holidays in December" — switching
+// year shouldn't be hidden behind a dropdown deep in the form.
+
+function HolidaysCard() {
+  const toast = useToast()
+  const [year, setYear] = useState<number>(new Date().getFullYear())
+  const [rows, setRows] = useState<Holiday[]>([])
+  const [loading, setLoading] = useState(true)
+  const [adding, setAdding] = useState(false)
+  const [form, setForm] = useState({ name: '', date: '', type: 'national' as Holiday['type'] })
+  const [saving, setSaving] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const r = await holidayApi.list(year)
+      setRows(r.data.data || [])
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'โหลดวันหยุดไม่สำเร็จ')
+    } finally { setLoading(false) }
+  }
+  useEffect(() => { load() }, [year]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const resetForm = () => setForm({ name: '', date: '', type: 'national' })
+
+  const submit = async () => {
+    if (!form.name.trim()) { toast.error('กรุณาระบุชื่อวันหยุด'); return }
+    if (!form.date) { toast.error('กรุณาเลือกวันที่'); return }
+    setSaving(true)
+    try {
+      await holidayApi.create({ name: form.name.trim(), date: form.date, type: form.type })
+      toast.success('เพิ่มวันหยุดแล้ว')
+      setAdding(false)
+      resetForm()
+      load()
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'เพิ่มไม่สำเร็จ')
+    } finally { setSaving(false) }
+  }
+
+  const remove = async (h: Holiday) => {
+    const ok = await toast.confirm(
+      `${dayjsThai(h.date)} — ${h.name}`,
+      { title: 'ลบวันหยุดนี้?', tone: 'danger', confirmText: 'ลบ' }
+    )
+    if (!ok) return
+    try {
+      await holidayApi.delete(h.id)
+      toast.success('ลบแล้ว')
+      load()
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'ลบไม่สำเร็จ')
+    }
+  }
+
+  // Year picker: this year + 1 ahead + 4 back. Picking next year
+  // is the most common use case (set up the company calendar at
+  // year-end), so it sits first after "this year".
+  const yearOptions = (() => {
+    const cur = new Date().getFullYear()
+    return [cur + 1, cur, cur - 1, cur - 2, cur - 3, cur - 4]
+  })()
+
+  // Group by month for easier scanning when there are 10+ entries.
+  const byMonth: Record<number, Holiday[]> = {}
+  for (const h of rows) {
+    const m = new Date(h.date).getMonth()
+    if (!byMonth[m]) byMonth[m] = []
+    byMonth[m].push(h)
+  }
+  const months = Object.keys(byMonth).map(Number).sort((a, b) => a - b)
+  const MONTH_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
+
+  return (
+    <div className="card mb-5">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <h2 className="text-sm font-semibold text-[#111110] flex items-center gap-2">
+          <IconBeach size={15} className="text-[#1D9E75]" />
+          วันหยุดบริษัท
+          <span className="text-[11px] font-normal text-gray-400">({rows.length} วัน)</span>
+        </h2>
+        <div className="flex items-center gap-2">
+          <select
+            className="input text-xs py-1 px-2 w-auto"
+            value={year}
+            onChange={e => setYear(parseInt(e.target.value, 10))}
+          >
+            {yearOptions.map(y => (
+              <option key={y} value={y}>ปี {y + 543}</option>
+            ))}
+          </select>
+          {!adding && (
+            <button onClick={() => setAdding(true)} className="btn btn-primary text-xs">
+              <IconPlus size={13} /> เพิ่ม
+            </button>
+          )}
+        </div>
+      </div>
+
+      <p className="text-[11px] text-gray-500 mb-3">
+        ใช้เป็นวันหยุดของบริษัท — ระบบจะข้ามวันหยุดเหล่านี้เวลานับวันลา และไม่นับว่าพนักงาน "ขาด" ในวันนี้
+      </p>
+
+      {adding && (
+        <div className="mb-3 p-3 border border-[#1D9E75]/20 bg-[#E1F5EE]/30 rounded-[10px] space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div className="sm:col-span-2">
+              <label className="label">ชื่อวันหยุด *</label>
+              <input
+                className="input text-sm"
+                placeholder="เช่น วันสงกรานต์"
+                value={form.name}
+                onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="label">ประเภท</label>
+              <select
+                className="input text-sm"
+                value={form.type}
+                onChange={e => setForm(p => ({ ...p, type: e.target.value as Holiday['type'] }))}
+              >
+                <option value="national">วันหยุดราชการ</option>
+                <option value="religious">วันสำคัญทางศาสนา</option>
+                <option value="company">วันหยุดบริษัท</option>
+              </select>
+            </div>
+            <div className="sm:col-span-3">
+              <label className="label">วันที่ *</label>
+              <input
+                type="date"
+                className="input text-sm"
+                value={form.date}
+                onChange={e => setForm(p => ({ ...p, date: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => { setAdding(false); resetForm() }}
+              className="btn text-sm"
+            >
+              ยกเลิก
+            </button>
+            <button
+              onClick={submit}
+              disabled={saving}
+              className="btn btn-primary text-sm"
+            >
+              {saving ? 'กำลังบันทึก…' : 'บันทึก'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-xs text-gray-400 py-4 text-center">กำลังโหลด…</p>
+      ) : rows.length === 0 ? (
+        <div className="py-6 text-center">
+          <p className="text-xs text-gray-400">ยังไม่มีวันหยุดในปี {year + 543}</p>
+          <p className="text-[10px] text-gray-400 mt-1">กดปุ่ม "เพิ่ม" เพื่อใส่วันหยุดวันแรก</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {months.map(m => (
+            <div key={m}>
+              <div className="text-[11px] font-medium text-gray-500 mb-1.5 px-1">{MONTH_TH[m]}</div>
+              <div className="space-y-1">
+                {byMonth[m].map(h => (
+                  <div
+                    key={h.id}
+                    className="flex items-center gap-3 px-3 py-2 rounded-md border border-black/[0.05] bg-white hover:border-black/[0.1]"
+                  >
+                    <div className="w-10 text-center flex-shrink-0">
+                      <div className="text-base font-semibold text-[#111110] tabular-nums">
+                        {new Date(h.date).getDate()}
+                      </div>
+                      <div className="text-[9px] text-gray-400">
+                        {['อา','จ','อ','พ','พฤ','ศ','ส'][new Date(h.date).getDay()]}
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-[#111110] truncate">{h.name}</div>
+                      <div className="text-[10px] text-gray-400">
+                        {h.type === 'religious' ? 'วันสำคัญทางศาสนา'
+                          : h.type === 'company' ? 'วันหยุดบริษัท'
+                          : 'วันหยุดราชการ'}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => remove(h)}
+                      className="p-1.5 rounded hover:bg-red-50"
+                      title="ลบ"
+                    >
+                      <IconTrash size={14} className="text-red-500" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// "วัน DD เดือนTH ปีBE" — used by the holiday delete-confirm
+// so the user sees what they're about to remove in human format.
+function dayjsThai(iso: string): string {
+  const d = new Date(iso)
+  const MONTH_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
+  return `${d.getDate()} ${MONTH_TH[d.getMonth()]} ${d.getFullYear() + 543}`
 }
