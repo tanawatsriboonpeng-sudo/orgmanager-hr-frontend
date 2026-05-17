@@ -431,6 +431,19 @@ export default function AttendancePage() {
                       </div>
                     </div>
                   )}
+                  {todayLog.missing_checkout && (
+                    <div className="mt-2 pt-2 border-t border-amber-200 bg-amber-50/40 -mx-3 px-3 pb-2 rounded-b-[10px]">
+                      <div className="flex justify-between items-start">
+                        <div className="text-xs">
+                          <div className="font-medium text-amber-800">ลืมลงเวลาออก</div>
+                          <div className="text-[11px] text-amber-700 mt-0.5">
+                            ระบบหักเวลาทำงานเหลือครึ่งวัน · ถ้าออกจริง ยื่นคำขอย้อนหลังได้
+                          </div>
+                        </div>
+                        <span className="badge badge-amber text-[10px] flex-shrink-0">ครึ่งวัน</span>
+                      </div>
+                    </div>
+                  )}
                   {todayLog.is_offsite && (
                     <div className="mt-2 pt-2 border-t border-[#1D9E75]/20">
                       <div className="flex justify-between items-center">
