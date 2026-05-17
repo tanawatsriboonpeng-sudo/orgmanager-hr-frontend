@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useEffect, useRef, useState } from 'react'
-import { employeeApi, orgApi, officeLocationApi, lineAuthApi, type OrgSettings, type OfficeLocation } from '@/lib/api'
+import { employeeApi, orgApi, officeLocationApi, lineAuthApi, retentionApi, type OrgSettings, type OfficeLocation, type RetentionPolicy } from '@/lib/api'
 
 // Leaflet hits window on import, so load the map only on the client.
 // The lazy chunk also keeps the initial /settings bundle slim.
@@ -21,7 +21,7 @@ import {
   IconBriefcase, IconShieldLock, IconChevronRight,
   IconCrown, IconUsers, IconPhoto, IconX, IconCheck,
   IconPhone, IconEdit, IconUserCircle, IconMapPin, IconPlus,
-  IconTrash, IconCurrentLocation, IconBrandLine,
+  IconTrash, IconCurrentLocation, IconBrandLine, IconDatabase, IconClock,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 
@@ -290,6 +290,9 @@ export default function SettingsPage() {
 
       {/* Office Locations — owner only */}
       {role === 'owner' && <OfficeLocationsCard />}
+
+      {/* Data retention — owner only */}
+      {role === 'owner' && <DataRetentionCard />}
 
       {/* LINE account link — everyone */}
       <LineLinkCard
@@ -895,6 +898,214 @@ function LineLinkCard({ linked, onChanged }: { linked: boolean; onChanged: () =>
           <span className="flex-1">{msg.text}</span>
           <button onClick={() => setMsg(null)} className="opacity-70 hover:opacity-100">ปิด</button>
         </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
+// DATA RETENTION (owner-only)
+// ============================================================
+// Surfaces the org_settings retention_* columns + the JSONB summary the
+// backend writes after each purge. The submit button only enables when
+// the form has actually diverged from server state — keeps "บันทึก" from
+// being a no-op the owner clicks repeatedly.
+
+function DataRetentionCard() {
+  const [policy, setPolicy] = useState<RetentionPolicy | null>(null)
+  const [form, setForm] = useState({
+    selfieDays: 180,
+    attachmentDays: 365,
+    notificationDays: 90,
+    auditDays: 730,
+    autoPurge: true,
+  })
+  const [busy, setBusy] = useState(false)
+  const [purging, setPurging] = useState(false)
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
+
+  const load = async () => {
+    try {
+      const r = await retentionApi.get()
+      const p = r.data.data
+      setPolicy(p)
+      setForm({
+        selfieDays: p.retention_selfie_days,
+        attachmentDays: p.retention_attachment_days,
+        notificationDays: p.retention_notification_days,
+        auditDays: p.retention_audit_days,
+        autoPurge: p.retention_auto_purge,
+      })
+    } catch (e: any) {
+      setMsg({ text: e?.response?.data?.message || 'โหลดนโยบายไม่สำเร็จ', ok: false })
+    }
+  }
+  useEffect(() => { load() }, [])
+
+  const dirty = policy && (
+    form.selfieDays !== policy.retention_selfie_days ||
+    form.attachmentDays !== policy.retention_attachment_days ||
+    form.notificationDays !== policy.retention_notification_days ||
+    form.auditDays !== policy.retention_audit_days ||
+    form.autoPurge !== policy.retention_auto_purge
+  )
+
+  const save = async () => {
+    setBusy(true); setMsg(null)
+    try {
+      await retentionApi.update(form)
+      setMsg({ text: 'บันทึกนโยบายแล้ว', ok: true })
+      await load()
+    } catch (e: any) {
+      setMsg({ text: e?.response?.data?.message || 'บันทึกไม่สำเร็จ', ok: false })
+    } finally { setBusy(false) }
+  }
+
+  const purgeNow = async () => {
+    if (!confirm('ล้างข้อมูลเก่าทันทีตามนโยบายปัจจุบัน? รูปและไฟล์แนบที่เกินกำหนดจะถูกลบถาวร')) return
+    setPurging(true); setMsg(null)
+    try {
+      const r = await retentionApi.purgeNow()
+      const s = r.data.data
+      const total = (s?.selfies_cleared || 0)
+        + (s?.offsite_selfies_cleared || 0)
+        + (s?.backdate_attachments_cleared || 0)
+      setMsg({
+        text: `ล้างแล้ว — รูป ${total}, แจ้งเตือน ${s?.notifications_deleted || 0}, audit ${s?.audit_logs_deleted || 0}`,
+        ok: true,
+      })
+      await load()
+    } catch (e: any) {
+      setMsg({ text: e?.response?.data?.message || 'ล้างไม่สำเร็จ', ok: false })
+    } finally { setPurging(false) }
+  }
+
+  const last = policy?.last_purge_summary
+  const lastWhen = policy?.last_purge_at ? new Date(policy.last_purge_at) : null
+
+  return (
+    <div className="card mb-5">
+      <h2 className="text-sm font-semibold text-[#111110] mb-1 flex items-center gap-2">
+        <IconDatabase size={15} className="text-gray-400" />
+        การลบข้อมูลเก่าอัตโนมัติ
+      </h2>
+      <p className="text-xs text-gray-500 mb-4">
+        ลบเฉพาะรูป/ไฟล์แนบที่หมดอายุการเก็บ — บันทึกเวลาเข้า-ออก/การลา/KPI/เงินเดือนยังอยู่ครบ
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+        <RetentionField
+          label="รูป selfie เช็คอิน / ลงนอกสถานที่"
+          help="หลังเก็บนานเกินจำนวนวัน รูปจะถูกล้าง แต่บันทึกเวลายังอยู่"
+          value={form.selfieDays}
+          onChange={v => setForm(p => ({ ...p, selfieDays: v }))}
+          min={7} max={3650} suggested="180"
+        />
+        <RetentionField
+          label="ไฟล์แนบขอย้อนหลัง"
+          help="หลักฐานในคำขอ backdate"
+          value={form.attachmentDays}
+          onChange={v => setForm(p => ({ ...p, attachmentDays: v }))}
+          min={7} max={3650} suggested="365"
+        />
+        <RetentionField
+          label="แจ้งเตือนในแอป"
+          help="ลบแถวออกเลย (ข้อความเก่าไม่มีประโยชน์)"
+          value={form.notificationDays}
+          onChange={v => setForm(p => ({ ...p, notificationDays: v }))}
+          min={1} max={3650} suggested="90"
+        />
+        <RetentionField
+          label="Audit log"
+          help="บันทึกการกระทำของ HR/owner"
+          value={form.auditDays}
+          onChange={v => setForm(p => ({ ...p, auditDays: v }))}
+          min={30} max={3650} suggested="730"
+        />
+      </div>
+
+      <label className="flex items-center gap-2 cursor-pointer text-sm mb-3">
+        <input
+          type="checkbox"
+          checked={form.autoPurge}
+          onChange={e => setForm(p => ({ ...p, autoPurge: e.target.checked }))}
+          className="accent-[#1D9E75]"
+        />
+        <span>เปิดล้างอัตโนมัติทุกวัน</span>
+        <span className="text-[11px] text-gray-400">(รันเงียบๆ ตอนมีคนเปิดแอปครั้งแรกของวัน)</span>
+      </label>
+
+      {msg && (
+        <div className={clsx(
+          'mb-3 px-3 py-2 rounded-md text-xs flex items-center gap-2 border',
+          msg.ok ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
+        )}>
+          {msg.ok ? <IconCheck size={13} /> : <IconX size={13} />}
+          <span className="flex-1">{msg.text}</span>
+          <button onClick={() => setMsg(null)} className="opacity-70 hover:opacity-100">ปิด</button>
+        </div>
+      )}
+
+      <div className="flex gap-2 mb-4">
+        <button onClick={save} disabled={!dirty || busy} className="btn btn-primary text-sm">
+          {busy ? 'กำลังบันทึก…' : 'บันทึกนโยบาย'}
+        </button>
+        <button onClick={purgeNow} disabled={purging} className="btn text-sm">
+          <IconTrash size={13} /> {purging ? 'กำลังล้าง…' : 'ล้างทันที'}
+        </button>
+      </div>
+
+      {/* Last purge summary */}
+      <div className="border-t border-black/[0.05] pt-3 text-xs">
+        <div className="flex items-center gap-2 text-gray-500 mb-1.5">
+          <IconClock size={12} />
+          <span>การล้างล่าสุด</span>
+        </div>
+        {lastWhen && last ? (
+          <div className="space-y-1">
+            <div className="text-[#111110]">
+              {lastWhen.toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}
+            </div>
+            <div className="text-gray-500 leading-relaxed">
+              รูปเช็คอิน {last.selfies_cleared || 0} ·
+              รูปลงนอกสถานที่ {last.offsite_selfies_cleared || 0} ·
+              ไฟล์แนบ {last.backdate_attachments_cleared || 0} ·
+              แจ้งเตือน {last.notifications_deleted || 0} ·
+              audit {last.audit_logs_deleted || 0} ·
+              token หมดอายุ {last.expired_refresh_tokens_deleted || 0}
+            </div>
+          </div>
+        ) : (
+          <p className="text-gray-400">ยังไม่เคยล้าง — กด "ล้างทันที" เพื่อเริ่ม</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function RetentionField({ label, help, value, onChange, min, max, suggested }: {
+  label: string; help?: string
+  value: number; onChange: (v: number) => void
+  min: number; max: number; suggested: string
+}) {
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          className="input text-sm"
+          value={value}
+          min={min}
+          max={max}
+          onChange={e => onChange(parseInt(e.target.value, 10) || 0)}
+        />
+        <span className="text-xs text-gray-500 whitespace-nowrap">วัน</span>
+      </div>
+      {help && (
+        <p className="text-[10px] text-gray-400 mt-1">
+          {help} · แนะนำ {suggested} วัน
+        </p>
       )}
     </div>
   )

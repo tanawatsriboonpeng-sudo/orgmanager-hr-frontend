@@ -70,6 +70,41 @@ export const lineAuthApi = {
   unlink: () => api.post('/auth/line-unlink'),
 }
 
+// Data retention. Read by HR/owner (HR sees-only), write + manual purge
+// owner-only. last_purge_summary is the JSONB written by the backend's
+// purgeOnce() — shape is intentionally loose here so adding a counter
+// on the backend doesn't require a frontend type change.
+export interface RetentionPolicy {
+  retention_selfie_days: number
+  retention_attachment_days: number
+  retention_notification_days: number
+  retention_audit_days: number
+  retention_auto_purge: boolean
+  last_purge_at?: string | null
+  last_purge_summary?: {
+    started_at?: string
+    finished_at?: string
+    selfies_cleared?: number
+    offsite_selfies_cleared?: number
+    backdate_attachments_cleared?: number
+    notifications_deleted?: number
+    audit_logs_deleted?: number
+    expired_refresh_tokens_deleted?: number
+    [k: string]: any
+  } | null
+}
+export const retentionApi = {
+  get: () => api.get<{ success: boolean; data: RetentionPolicy }>('/admin/retention'),
+  update: (body: Partial<{
+    selfieDays: number
+    attachmentDays: number
+    notificationDays: number
+    auditDays: number
+    autoPurge: boolean
+  }>) => api.patch('/admin/retention', body),
+  purgeNow: () => api.post<{ success: boolean; data: RetentionPolicy['last_purge_summary'] }>('/admin/purge-old-data'),
+}
+
 // Attendance APIs
 export const attendanceApi = {
   checkIn: (lat?: number, lng?: number, method = 'gps', selfie?: string) =>
