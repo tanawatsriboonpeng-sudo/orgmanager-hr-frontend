@@ -70,9 +70,21 @@ export default function AnnouncementsPage() {
     } finally { setLoading(false) }
   }
 
+  // Optimistic mark-read: stamp read_at locally, sync via API, surface
+  // any failure (offline, 500). Previously the catch was empty so a
+  // failed POST left the announcement looking read until the next page
+  // load (when load() re-fetched the true state) and the user had no
+  // idea anything went wrong.
   const markRead = async (id: string) => {
-    await announcementApi.markRead(id).catch(() => {})
-    load()
+    const nowIso = new Date().toISOString()
+    setItems(list => list.map(a => a.id === id ? { ...a, read_at: nowIso } : a))
+    try {
+      await announcementApi.markRead(id)
+      setMsg('')
+    } catch (e: any) {
+      setItems(list => list.map(a => a.id === id ? { ...a, read_at: null } : a))
+      setMsg(e?.response?.data?.message || 'ทำเครื่องหมายอ่านไม่สำเร็จ')
+    }
   }
 
   return (
@@ -88,6 +100,18 @@ export default function AnnouncementsPage() {
           </button>
         )}
       </div>
+
+      {msg && !showForm && (
+        <div className={clsx(
+          'mb-4 px-3 py-2 rounded-md border text-xs flex items-center justify-between',
+          msg.includes('แล้ว')
+            ? 'bg-green-50 border-green-200 text-green-700'
+            : 'bg-red-50 border-red-200 text-red-700'
+        )}>
+          <span>{msg}</span>
+          <button onClick={() => setMsg('')} className="opacity-70 hover:opacity-100">ปิด</button>
+        </div>
+      )}
 
       {/* Form */}
       {showForm && canCreate && (
