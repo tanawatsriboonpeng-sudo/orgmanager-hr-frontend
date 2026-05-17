@@ -89,6 +89,7 @@ export const attendanceApi = {
     checkInTime?: string                             // HH:MM
     checkOutTime?: string                            // HH:MM
     reason: string
+    attachment?: string                              // base64 dataURL, optional
   }) => api.post('/attendance/backdate-request', data),
   myBackdates: () => api.get('/attendance/backdate-mine'),
   backdatePending: () => api.get('/attendance/backdate-pending'),

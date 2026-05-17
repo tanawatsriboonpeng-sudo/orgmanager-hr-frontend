@@ -5,7 +5,8 @@ import { useAuthStore } from '@/lib/store'
 import {
   IconMapPin, IconClockCheck, IconClockOff, IconAlertTriangle,
   IconCheck, IconX, IconChevronDown, IconChevronUp,
-  IconRefresh, IconClock, IconUsers, IconCalendar,
+  IconRefresh, IconClock, IconUsers, IconCalendar, IconPhoto,
+  IconExternalLink,
 } from '@tabler/icons-react'
 import dayjs from 'dayjs'
 import clsx from 'clsx'
@@ -816,6 +817,25 @@ function DailySummaryCard({
                         </span>
                       )}
                     </div>
+                    {/* GPS location pin so HR can verify where the
+                        employee actually was. Coordinates as text +
+                        Google Maps deep link (opens new tab). */}
+                    {r.check_in_lat != null && r.check_in_lng != null && (
+                      <div className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                        <IconMapPin size={11} className="text-gray-400" />
+                        <span className="tabular-nums">
+                          {Number(r.check_in_lat).toFixed(5)}, {Number(r.check_in_lng).toFixed(5)}
+                        </span>
+                        <a
+                          href={`https://www.google.com/maps?q=${r.check_in_lat},${r.check_in_lng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[#1D9E75] hover:underline inline-flex items-center gap-0.5"
+                        >
+                          ดูบนแผนที่ <IconExternalLink size={10} />
+                        </a>
+                      </div>
+                    )}
                     <div className="text-[12px] text-gray-700 mt-1 break-words">{r.offsite_reason}</div>
                   </div>
                   <div className="flex flex-col gap-1 flex-shrink-0">
@@ -884,7 +904,24 @@ function DailySummaryCard({
               return (
                 <div key={r.id} className="rounded-[10px] border border-violet-200 bg-violet-50/30 p-2.5">
                   <div className="flex items-start gap-2.5">
-                    <EmployeeAvatar person={r} size={32} />
+                    {r.attachment ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <a
+                        href={r.attachment}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="คลิกเพื่อดูภาพเต็ม"
+                        className="flex-shrink-0"
+                      >
+                        <img
+                          src={r.attachment}
+                          alt="หลักฐาน"
+                          className="w-12 h-12 rounded-[8px] object-cover border border-black/[0.05]"
+                        />
+                      </a>
+                    ) : (
+                      <EmployeeAvatar person={r} size={32} />
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[13px] font-medium text-[#111110]">{r.first_name} {r.last_name}</span>
@@ -1282,10 +1319,41 @@ function BackdateRequestModal({
   const [checkInTime, setCheckInTime] = useState('09:00')
   const [checkOutTime, setCheckOutTime] = useState('17:00')
   const [reason, setReason] = useState('')
+  // Optional evidence image (receipt, meeting screenshot, etc.). Stored
+  // as a JPEG dataURL after a client-side resize to keep the payload
+  // tiny — backend caps at ~500KB.
+  const [attachment, setAttachment] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const needsIn  = requestType === 'check_in'  || requestType === 'both'
   const needsOut = requestType === 'check_out' || requestType === 'both'
+
+  // Read the user's chosen file, draw it into a canvas down-scaled so
+  // the longest edge is 1024px, then encode as JPEG at 0.7 quality.
+  // Same approach as the selfie capture, just from a file picker
+  // instead of getUserMedia.
+  const onFile = (file: File | null | undefined) => {
+    if (!file) return
+    if (!/^image\//.test(file.type)) { onError('โปรดเลือกไฟล์รูปภาพ'); return }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const maxEdge = 1024
+        const scale = Math.min(1, maxEdge / Math.max(img.width, img.height))
+        const w = Math.round(img.width * scale)
+        const h = Math.round(img.height * scale)
+        const canvas = document.createElement('canvas')
+        canvas.width = w; canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+        ctx.drawImage(img, 0, 0, w, h)
+        setAttachment(canvas.toDataURL('image/jpeg', 0.7))
+      }
+      img.src = String(reader.result)
+    }
+    reader.readAsDataURL(file)
+  }
 
   const submit = async () => {
     if (!reason.trim()) { onError('กรุณาระบุเหตุผล'); return }
@@ -1302,6 +1370,7 @@ function BackdateRequestModal({
         checkInTime:  needsIn  ? checkInTime  : undefined,
         checkOutTime: needsOut ? checkOutTime : undefined,
         reason: reason.trim(),
+        attachment: attachment || undefined,
       })
       onSubmitted()
     } catch (e: any) {
@@ -1375,6 +1444,34 @@ function BackdateRequestModal({
               value={reason}
               onChange={e => setReason(e.target.value)}
             />
+          </div>
+          <div>
+            <label className="label">รูปหลักฐาน (ไม่บังคับ)</label>
+            {attachment ? (
+              <div className="flex items-center gap-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={attachment} alt="หลักฐาน" className="w-16 h-16 rounded-[8px] object-cover border border-black/[0.05]" />
+                <button
+                  onClick={() => setAttachment(null)}
+                  className="btn text-xs text-red-500 border-red-200"
+                >
+                  ลบรูป
+                </button>
+              </div>
+            ) : (
+              <label className="btn text-xs cursor-pointer inline-flex items-center gap-1.5">
+                <IconPhoto size={14} />
+                เลือกรูป / ถ่ายรูป
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={e => onFile(e.target.files?.[0])}
+                />
+              </label>
+            )}
+            <p className="text-[10px] text-gray-400 mt-1">เช่น ใบเสร็จ, ภาพห้องประชุม, screenshot นัด</p>
           </div>
         </div>
         <div className="flex gap-2 justify-end p-4 border-t border-black/[0.06]">
