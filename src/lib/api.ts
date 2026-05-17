@@ -481,6 +481,47 @@ export const shiftConfigApi = {
   delete: (id: string) => api.delete(`/shift-configs/${id}`),
 }
 
+// Calendar events. Distinct from holidays — these are meetings,
+// seminars, company events scheduled by HR/owner (or the creator).
+// visibility=='all' → everyone sees it; 'department' → only that
+// dept; 'specific' → only employees in attendee_ids.
+export interface CalendarEvent {
+  id: string
+  title: string
+  description?: string | null
+  event_type: 'meeting' | 'seminar' | 'company' | 'birthday' | 'other' | string
+  start_date: string          // YYYY-MM-DD
+  end_date?: string | null
+  start_time?: string | null  // HH:MM:SS
+  end_time?: string | null
+  location?: string | null
+  color?: string | null
+  visibility: 'all' | 'department' | 'specific'
+  department_id?: string | null
+  department_name?: string | null
+  attendee_ids?: string[] | null
+  created_by?: string | null
+  created_by_name?: string | null
+  created_at?: string
+}
+export const eventApi = {
+  // from/to inclusive YYYY-MM-DD. Omit to get the default window
+  // (today − 30d .. today + 90d).
+  list: (params?: { from?: string; to?: string }) =>
+    api.get<{ success: boolean; data: CalendarEvent[] }>('/events', { params }),
+  create: (body: {
+    title: string; description?: string;
+    eventType?: string; startDate: string; endDate?: string;
+    startTime?: string; endTime?: string;
+    location?: string; color?: string;
+    visibility?: 'all' | 'department' | 'specific';
+    departmentId?: string; attendeeIds?: string[];
+  }) => api.post<{ success: boolean; data: CalendarEvent }>('/events', body),
+  update: (id: string, body: Partial<Parameters<typeof eventApi.create>[0]>) =>
+    api.patch<{ success: boolean }>(`/events/${id}`, body),
+  delete: (id: string) => api.delete<{ success: boolean }>(`/events/${id}`),
+}
+
 // Holiday APIs
 export interface Holiday {
   id: string

@@ -23,6 +23,7 @@ const ROLE_MENUS = {
   owner: [
     // Owner ดูภาพรวม/อนุมัติ/จัดการเท่านั้น ไม่ลงเวลา ไม่ขอ OT ไม่มีกะ
     { href: '/dashboard', icon: IconLayoutDashboard, label: 'ภาพรวม' },
+    { href: '/calendar', icon: IconCalendarTime, label: 'ปฏิทิน' },
     { href: '/leave', icon: IconCalendarOff, label: 'การลา' },
     { href: '/shifts', icon: IconCalendarTime, label: 'จัดกะ' },
     { href: '/payroll', icon: IconReceipt2, label: 'เงินเดือน' },
@@ -36,6 +37,7 @@ const ROLE_MENUS = {
   ],
   hr: [
     { href: '/dashboard', icon: IconLayoutDashboard, label: 'ภาพรวม' },
+    { href: '/calendar', icon: IconCalendarTime, label: 'ปฏิทิน' },
     { href: '/attendance', icon: IconClock, label: 'ลงเวลา' },
     { href: '/leave', icon: IconCalendarOff, label: 'การลา' },
     { href: '/ot', icon: IconClockPlus, label: 'OT' },
@@ -49,6 +51,7 @@ const ROLE_MENUS = {
   ],
   employee: [
     { href: '/dashboard', icon: IconLayoutDashboard, label: 'หน้าหลัก' },
+    { href: '/calendar', icon: IconCalendarTime, label: 'ปฏิทิน' },
     { href: '/attendance', icon: IconClock, label: 'ลงเวลา' },
     { href: '/leave', icon: IconCalendarOff, label: 'การลา' },
     { href: '/ot', icon: IconClockPlus, label: 'OT' },
