@@ -93,7 +93,11 @@ export default function LeavePage() {
     if (r) setTeamQuotas(r.data.data || [])
   }
 
-  useEffect(() => { load() }, [])
+  // useAuthStore.user populates async via fetchMe — on the first render
+  // role is undefined, so isOwner/canSeePending are both false. We have
+  // to re-run load() once those resolve or HR/owner never see the
+  // pending queue and owner pointlessly fetches /myQuota → 404.
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [isOwner, canSeePending])
   useEffect(() => { loadTeamQuotas(teamYear) /* eslint-disable-next-line */ }, [teamYear, canSeePending])
 
   // Auto-dismiss success toasts; errors persist until next action.

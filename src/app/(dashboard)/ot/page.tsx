@@ -89,7 +89,10 @@ export default function OTPage() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  // useAuthStore.user populates async — first render has role=undefined
+  // so canSeePending/isOwner are both false and load() pulls the wrong
+  // bundle (history only, no pending). Re-run when those resolve.
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [canSeePending, isOwner])
 
   useEffect(() => {
     if (!toast || !toast.ok) return
