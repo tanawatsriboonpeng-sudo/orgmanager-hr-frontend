@@ -954,6 +954,13 @@ export const cleaningApi = {
     api.patch(`/cleaning/sessions/${id}/inspector`, { employeeId }),
   inspect: (id: string, items: CleaningInspectItem[], notes?: string) =>
     api.post(`/cleaning/sessions/${id}/inspect`, { items, notes }),
+  // Inspector ad-hoc items: rows the inspector adds beyond what HR
+  // pre-defined. Backend enforces "assigned inspector + session still
+  // editable" and "only ad-hoc rows can be deleted from here".
+  addSessionItem: (sessionId: string, name: string) =>
+    api.post(`/cleaning/sessions/${sessionId}/items`, { name }),
+  deleteSessionItem: (sessionId: string, itemId: string) =>
+    api.delete(`/cleaning/sessions/${sessionId}/items/${itemId}`),
   approve: (id: string, hrNotes?: string) =>
     api.post(`/cleaning/sessions/${id}/approve`, { hrNotes }),
   reject: (id: string, hrNotes?: string) =>

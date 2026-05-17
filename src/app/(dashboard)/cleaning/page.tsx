@@ -183,6 +183,10 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
   const [employees, setEmployees] = useState<any[]>([])
   const [showReassign, setShowReassign] = useState(false)
   const [reassignTo, setReassignTo] = useState('')
+  // Inspector ad-hoc item composer — inline at the bottom of the list.
+  // Empty string when the row isn't open.
+  const [newItemName, setNewItemName] = useState('')
+  const [addingItem, setAddingItem] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -290,6 +294,36 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
     } catch (e: any) {
       flash(e?.response?.data?.message || 'เปลี่ยนผู้ตรวจไม่สำเร็จ', false)
     } finally { setBusy(false) }
+  }
+
+  // Inspector adds a row that wasn't on HR's master list. After insert
+  // we reload the whole session so display_order + new row id flow back
+  // (cheaper than splicing locally and risking drift on next inspect submit).
+  const addAdHocItem = async () => {
+    if (!session) return
+    const trimmed = newItemName.trim()
+    if (!trimmed) { flash('กรุณาระบุชื่องาน', false); return }
+    setAddingItem(true)
+    try {
+      await cleaningApi.addSessionItem(session.id, trimmed)
+      setNewItemName('')
+      await load()
+    } catch (e: any) {
+      flash(e?.response?.data?.message || 'เพิ่มรายการไม่สำเร็จ', false)
+    } finally { setAddingItem(false) }
+  }
+
+  const deleteAdHocItem = async (itemId: string) => {
+    if (!session) return
+    try {
+      await cleaningApi.deleteSessionItem(session.id, itemId)
+      // Drop the row's form state too so a stale entry doesn't sneak
+      // into the next inspect submit.
+      setFormItems(p => { const n = { ...p }; delete n[itemId]; return n })
+      await load()
+    } catch (e: any) {
+      flash(e?.response?.data?.message || 'ลบไม่สำเร็จ', false)
+    }
   }
 
   if (loading) return <div className="card text-sm text-gray-500">กำลังโหลด…</div>
@@ -410,7 +444,28 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
                   <div className="flex items-start gap-2">
                     <span className="text-xs text-gray-400 font-medium mt-0.5">{idx + 1}.</span>
                     <span className="text-sm font-medium text-[#111110]">{it.item_name}</span>
+                    {it.item_id === null && (
+                      <span
+                        className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px]"
+                        title="ผู้ตรวจเพิ่มรายการนี้เอง (ไม่ได้มาจากรายการตั้งค่า)"
+                      >
+                        เพิ่มเอง
+                      </span>
+                    )}
                   </div>
+                  {/* Ad-hoc items can be deleted only by the inspector
+                      while the row is still untouched. Master items
+                      stay — they're managed from the settings tab. */}
+                  {canFillForm && it.item_id === null && !it.done_by_employee_id && !it.not_done && (
+                    <button
+                      type="button"
+                      onClick={() => deleteAdHocItem(it.id)}
+                      className="text-gray-400 hover:text-red-500"
+                      title="ลบรายการนี้"
+                    >
+                      <IconTrash size={14} />
+                    </button>
+                  )}
                 </div>
 
                 {showForm ? (
@@ -487,6 +542,30 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
             )
           })}
         </div>
+
+        {/* Inspector ad-hoc composer — only while the session is editable.
+            Lets the inspector record jobs that actually got done today
+            but weren't on HR's master list. */}
+        {canFillForm && (
+          <div className="mt-3 flex gap-2 items-center">
+            <input
+              className="input text-xs flex-1"
+              placeholder="เพิ่มรายการที่ไม่ได้อยู่ในรายการตั้งค่า…"
+              value={newItemName}
+              onChange={e => setNewItemName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addAdHocItem() } }}
+              disabled={addingItem}
+            />
+            <button
+              type="button"
+              onClick={addAdHocItem}
+              disabled={addingItem || !newItemName.trim()}
+              className="btn text-xs whitespace-nowrap"
+            >
+              <IconPlus size={13} /> เพิ่ม
+            </button>
+          </div>
+        )}
 
         {canSubmit && (
           <div className="mt-4 pt-4 border-t border-black/[0.06]">
