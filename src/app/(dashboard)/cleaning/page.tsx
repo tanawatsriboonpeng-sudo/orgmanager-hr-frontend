@@ -1,5 +1,6 @@
 'use client'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   cleaningApi, employeeApi,
   type CleaningItem, type CleaningSettings, type CleaningQueueRow,
@@ -44,6 +45,8 @@ type Tab = 'today' | 'history' | 'settings'
 export default function CleaningPage() {
   const { user } = useAuthStore()
   const isHR = user?.role === 'hr' || user?.role === 'owner'
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [tab, setTab] = useState<Tab>('today')
 
   // Page-level toast (auto-dismiss via ref-tracked timer).
@@ -55,6 +58,34 @@ export default function CleaningPage() {
     if (toastTimer.current) clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => { setToast(null); toastTimer.current = null }, 4000)
   }
+
+  // Deep-link support: ?session=:id (used by bell notifications). When
+  // present we land on the History tab and open the detail modal so HR
+  // can approve/reject a backlog session without hunting for it.
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null)
+  useEffect(() => {
+    const sid = searchParams?.get('session')
+    if (sid) { setOpenSessionId(sid); setTab('history') }
+  }, [searchParams])
+  const closeDetail = () => {
+    setOpenSessionId(null)
+    // Strip the ?session= so a refresh doesn't re-open and the URL stays clean.
+    if (searchParams?.get('session')) router.replace('/cleaning')
+  }
+
+  // Pending-approval count powers a small amber badge next to the
+  // "ประวัติ" tab label. Lightweight — same listSessions endpoint, single
+  // pass, refreshed when a child indicates state may have changed.
+  const [pendingCount, setPendingCount] = useState(0)
+  const refreshPending = useCallback(async () => {
+    if (!isHR) return
+    try {
+      const r = await cleaningApi.listSessions({ limit: 50 })
+      const n = (r.data.data || []).filter((x: CleaningSessionListRow) => x.status === 'inspector_reviewed').length
+      setPendingCount(n)
+    } catch {}
+  }, [isHR])
+  useEffect(() => { refreshPending() }, [refreshPending])
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -99,14 +130,29 @@ export default function CleaningPage() {
               )}
             >
               <Icon size={14} /> {label}
+              {k === 'history' && isHR && pendingCount > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold leading-none">
+                  {pendingCount}
+                </span>
+              )}
             </button>
           )
         })}
       </div>
 
-      {tab === 'today' && <TodayTab flash={flash} isHR={isHR} />}
-      {tab === 'history' && <HistoryTab flash={flash} />}
+      {tab === 'today' && <TodayTab flash={flash} isHR={isHR} onChanged={refreshPending} />}
+      {tab === 'history' && <HistoryTab flash={flash} isHR={isHR} onOpenDetail={setOpenSessionId} />}
       {tab === 'settings' && isHR && <SettingsTab flash={flash} />}
+
+      {openSessionId && (
+        <SessionDetailModal
+          sessionId={openSessionId}
+          isHR={isHR}
+          onClose={closeDetail}
+          onChanged={refreshPending}
+          flash={flash}
+        />
+      )}
     </div>
   )
 }
@@ -115,7 +161,7 @@ export default function CleaningPage() {
 // TODAY
 // ============================================================
 
-function TodayTab({ flash, isHR }: { flash: (text: string, ok?: boolean) => void; isHR: boolean }) {
+function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boolean) => void; isHR: boolean; onChanged?: () => void }) {
   const { user } = useAuthStore()
   const [session, setSession] = useState<CleaningSession | null>(null)
   const [emptyMsg, setEmptyMsg] = useState('')
@@ -187,6 +233,7 @@ function TodayTab({ flash, isHR }: { flash: (text: string, ok?: boolean) => void
       await cleaningApi.inspect(session.id, items, overallNote || undefined)
       flash('ส่งรายงานแล้ว รอ HR/เจ้าของอนุมัติ')
       await load()
+      onChanged?.()
     } catch (e: any) {
       flash(e?.response?.data?.message || 'ส่งรายงานไม่สำเร็จ', false)
     } finally { setBusy(false) }
@@ -200,6 +247,7 @@ function TodayTab({ flash, isHR }: { flash: (text: string, ok?: boolean) => void
       flash('อนุมัติเรียบร้อย')
       setHrNote('')
       await load()
+      onChanged?.()
     } catch (e: any) {
       flash(e?.response?.data?.message || 'อนุมัติไม่สำเร็จ', false)
     } finally { setBusy(false) }
@@ -214,6 +262,7 @@ function TodayTab({ flash, isHR }: { flash: (text: string, ok?: boolean) => void
       flash('ตีกลับเรียบร้อย')
       setHrNote('')
       await load()
+      onChanged?.()
     } catch (e: any) {
       flash(e?.response?.data?.message || 'ตีกลับไม่สำเร็จ', false)
     } finally { setBusy(false) }
@@ -459,9 +508,14 @@ function TodayTab({ flash, isHR }: { flash: (text: string, ok?: boolean) => void
 // HISTORY
 // ============================================================
 
-function HistoryTab({ flash }: { flash: (text: string, ok?: boolean) => void }) {
+function HistoryTab({ flash, isHR, onOpenDetail }: {
+  flash: (text: string, ok?: boolean) => void
+  isHR: boolean
+  onOpenDetail: (sessionId: string) => void
+}) {
   const [rows, setRows] = useState<CleaningSessionListRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState<'all' | 'pending'>('all')
 
   useEffect(() => {
     (async () => {
@@ -475,53 +529,97 @@ function HistoryTab({ flash }: { flash: (text: string, ok?: boolean) => void }) 
     })()
   }, [])
 
+  const filtered = useMemo(() =>
+    filter === 'pending' ? rows.filter(r => r.status === 'inspector_reviewed') : rows,
+  [rows, filter])
+  const pendingCount = useMemo(() => rows.filter(r => r.status === 'inspector_reviewed').length, [rows])
+
   if (loading) return <div className="card text-sm text-gray-500">กำลังโหลด…</div>
-  if (rows.length === 0) return <div className="card text-sm text-gray-500 text-center py-8">ยังไม่มีประวัติ</div>
 
   return (
-    <div className="card p-0 overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-gray-50 border-b border-black/[0.06] text-[11px] text-gray-500 uppercase">
-            <th className="text-left px-3 py-2.5">วันที่</th>
-            <th className="text-left px-3 py-2.5">เวลา</th>
-            <th className="text-left px-3 py-2.5">ผู้ตรวจ</th>
-            <th className="text-left px-3 py-2.5">รายการ</th>
-            <th className="text-left px-3 py-2.5">สถานะ</th>
-            <th className="text-left px-3 py-2.5">อนุมัติเมื่อ</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(r => (
-            <tr key={r.id} className="border-b border-black/[0.04] hover:bg-gray-50">
-              <td className="px-3 py-2.5">{dayjs(r.session_date).format('D MMM YY')}</td>
-              <td className="px-3 py-2.5 text-gray-600">{r.start_time?.slice(0,5)}–{r.end_time?.slice(0,5)}</td>
-              <td className="px-3 py-2.5">
-                {r.inspector_id ? (
-                  <div className="flex items-center gap-1.5">
-                    <EmployeeAvatar
-                      person={{
-                        first_name: r.inspector_first_name || undefined,
-                        last_name: r.inspector_last_name || undefined,
-                        avatar_url: r.inspector_avatar_url || undefined,
-                      }}
-                      size={20}
-                    />
-                    <span>{r.inspector_first_name} {r.inspector_last_name}</span>
-                  </div>
-                ) : <span className="text-gray-400">-</span>}
-              </td>
-              <td className="px-3 py-2.5 text-gray-600">{r.filled_count}/{r.item_count}</td>
-              <td className="px-3 py-2.5">
-                <span className={clsx('badge', STATUS_BADGE[r.status])}>{STATUS_TH[r.status]}</span>
-              </td>
-              <td className="px-3 py-2.5 text-gray-500 text-xs">
-                {r.approved_at ? dayjs(r.approved_at).format('D MMM HH:mm') : '-'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-3">
+      {isHR && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {([['all', 'ทั้งหมด', rows.length], ['pending', 'รออนุมัติ', pendingCount]] as const).map(([k, label, n]) => {
+            const active = filter === k
+            return (
+              <button
+                key={k}
+                onClick={() => setFilter(k as 'all' | 'pending')}
+                className={clsx(
+                  'text-[12px] px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5',
+                  active
+                    ? 'bg-[#111110] text-white border-[#111110]'
+                    : 'bg-white text-gray-600 border-black/[0.08] hover:bg-gray-50'
+                )}
+              >
+                {label}
+                <span className={clsx(
+                  'px-1.5 py-0.5 rounded-full text-[10px] font-semibold leading-none',
+                  active ? 'bg-white/20 text-white' : k === 'pending' && n > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'
+                )}>
+                  {n}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {filtered.length === 0 ? (
+        <div className="card text-sm text-gray-500 text-center py-8">
+          {filter === 'pending' ? 'ไม่มีรอบที่รออนุมัติ' : 'ยังไม่มีประวัติ'}
+        </div>
+      ) : (
+        <div className="card p-0 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-black/[0.06] text-[11px] text-gray-500 uppercase">
+                <th className="text-left px-3 py-2.5">วันที่</th>
+                <th className="text-left px-3 py-2.5">เวลา</th>
+                <th className="text-left px-3 py-2.5">ผู้ตรวจ</th>
+                <th className="text-left px-3 py-2.5">รายการ</th>
+                <th className="text-left px-3 py-2.5">สถานะ</th>
+                <th className="text-left px-3 py-2.5">อนุมัติเมื่อ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(r => (
+                <tr
+                  key={r.id}
+                  onClick={() => onOpenDetail(r.id)}
+                  className="border-b border-black/[0.04] hover:bg-gray-50 cursor-pointer"
+                >
+                  <td className="px-3 py-2.5">{dayjs(r.session_date).format('D MMM YY')}</td>
+                  <td className="px-3 py-2.5 text-gray-600">{r.start_time?.slice(0,5)}–{r.end_time?.slice(0,5)}</td>
+                  <td className="px-3 py-2.5">
+                    {r.inspector_id ? (
+                      <div className="flex items-center gap-1.5">
+                        <EmployeeAvatar
+                          person={{
+                            first_name: r.inspector_first_name || undefined,
+                            last_name: r.inspector_last_name || undefined,
+                            avatar_url: r.inspector_avatar_url || undefined,
+                          }}
+                          size={20}
+                        />
+                        <span>{r.inspector_first_name} {r.inspector_last_name}</span>
+                      </div>
+                    ) : <span className="text-gray-400">-</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-gray-600">{r.filled_count}/{r.item_count}</td>
+                  <td className="px-3 py-2.5">
+                    <span className={clsx('badge', STATUS_BADGE[r.status])}>{STATUS_TH[r.status]}</span>
+                  </td>
+                  <td className="px-3 py-2.5 text-gray-500 text-xs">
+                    {r.approved_at ? dayjs(r.approved_at).format('D MMM HH:mm') : '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
@@ -910,6 +1008,212 @@ function InspectorQueueSection({ flash }: { flash: (text: string, ok?: boolean) 
         <button onClick={save} disabled={saving} className="btn btn-primary text-sm">
           {saving ? 'กำลังบันทึก…' : 'บันทึกคิว'}
         </button>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// SESSION DETAIL MODAL
+// ============================================================
+// Used from the History tab (and bell deep-link). Shows the full
+// snapshot of a past or pending session and, when the current user is
+// HR/owner and the session is in inspector_reviewed state, exposes the
+// same approve/reject panel the Today tab uses — so backlog approval
+// works without hunting through the calendar.
+
+function SessionDetailModal({
+  sessionId, isHR, onClose, onChanged, flash,
+}: {
+  sessionId: string
+  isHR: boolean
+  onClose: () => void
+  onChanged?: () => void
+  flash: (text: string, ok?: boolean) => void
+}) {
+  const [detail, setDetail] = useState<CleaningSession | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [hrNote, setHrNote] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const r = await cleaningApi.getSession(sessionId)
+      setDetail(r.data.data)
+    } catch (e: any) {
+      flash(e?.response?.data?.message || 'โหลดรายละเอียดไม่สำเร็จ', false)
+      onClose()
+    } finally { setLoading(false) }
+  }, [sessionId])
+  useEffect(() => { load() }, [load])
+
+  const approve = async () => {
+    if (!detail) return
+    setBusy(true)
+    try {
+      await cleaningApi.approve(detail.id, hrNote || undefined)
+      flash('อนุมัติเรียบร้อย')
+      onChanged?.()
+      onClose()
+    } catch (e: any) {
+      flash(e?.response?.data?.message || 'อนุมัติไม่สำเร็จ', false)
+    } finally { setBusy(false) }
+  }
+  const reject = async () => {
+    if (!detail) return
+    if (!hrNote.trim()) { flash('กรุณาใส่เหตุผลที่ตีกลับ', false); return }
+    setBusy(true)
+    try {
+      await cleaningApi.reject(detail.id, hrNote)
+      flash('ตีกลับเรียบร้อย')
+      onChanged?.()
+      onClose()
+    } catch (e: any) {
+      flash(e?.response?.data?.message || 'ตีกลับไม่สำเร็จ', false)
+    } finally { setBusy(false) }
+  }
+
+  const canApprove = isHR && detail?.status === 'inspector_reviewed'
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-3 border-b border-black/[0.06] sticky top-0 bg-white">
+          <h2 className="text-base font-semibold flex items-center gap-2">
+            <IconSparkles size={16} className="text-[#1D9E75]" />
+            รายละเอียดรอบทำความสะอาด
+          </h2>
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-gray-100">
+            <IconX size={16} className="text-gray-500" />
+          </button>
+        </div>
+
+        {loading || !detail ? (
+          <div className="p-6 text-sm text-gray-500 text-center">กำลังโหลด…</div>
+        ) : (
+          <div className="p-5 space-y-4">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-sm font-semibold text-[#111110]">
+                  {dayjs(detail.session_date).format('dddd ที่ D MMMM YYYY')}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {detail.start_time?.slice(0,5)}–{detail.end_time?.slice(0,5)}
+                </p>
+              </div>
+              <span className={clsx('badge', STATUS_BADGE[detail.status])}>{STATUS_TH[detail.status]}</span>
+            </div>
+
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-gray-500 text-xs">ผู้ตรวจ:</span>
+              {detail.inspector_id ? (
+                <>
+                  <EmployeeAvatar
+                    person={{
+                      first_name: detail.inspector_first_name || undefined,
+                      last_name: detail.inspector_last_name || undefined,
+                      avatar_url: detail.inspector_avatar_url || undefined,
+                    }}
+                    size={20}
+                  />
+                  <span>{detail.inspector_first_name} {detail.inspector_last_name}</span>
+                </>
+              ) : <span className="text-gray-400 italic">ยังไม่กำหนด</span>}
+              {detail.inspector_completed_at && (
+                <span className="text-xs text-gray-500 ml-auto">
+                  ส่งรายงาน {dayjs(detail.inspector_completed_at).format('D MMM HH:mm')}
+                </span>
+              )}
+            </div>
+
+            {detail.inspector_notes && (
+              <div className="px-3 py-2 rounded-md bg-blue-50 border border-blue-200 text-xs text-blue-900">
+                <span className="font-medium">หมายเหตุผู้ตรวจ:</span> {detail.inspector_notes}
+              </div>
+            )}
+
+            <div>
+              <p className="text-xs font-semibold text-gray-600 mb-1.5">
+                รายการงาน ({detail.items.length})
+              </p>
+              <div className="space-y-1.5">
+                {detail.items.map((it, idx) => (
+                  <div key={it.id} className="border border-black/[0.06] rounded-md p-2.5">
+                    <div className="flex items-start gap-2">
+                      <span className="text-xs text-gray-400 font-medium mt-0.5">{idx + 1}.</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-[#111110]">{it.item_name}</p>
+                        <div className="text-xs text-gray-600 mt-1 flex items-center gap-2 flex-wrap">
+                          {it.done_by_employee_id ? (
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-50 text-green-800 border border-green-200">
+                              <EmployeeAvatar
+                                person={{
+                                  first_name: it.done_by_first_name || undefined,
+                                  last_name: it.done_by_last_name || undefined,
+                                  avatar_url: it.done_by_avatar_url || undefined,
+                                }}
+                                size={14}
+                              />
+                              {it.done_by_first_name} {it.done_by_last_name}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 italic">— ไม่ระบุคนทำ —</span>
+                          )}
+                          {it.inspector_note && <span className="text-gray-500">· {it.inspector_note}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* HR approve/reject panel */}
+            {canApprove && (
+              <div className="rounded-md border border-amber-200 bg-amber-50/50 p-3">
+                <p className="text-xs font-semibold text-amber-900 mb-2">รอ HR/เจ้าของอนุมัติ</p>
+                <textarea
+                  className="input min-h-[50px] resize-y text-sm"
+                  placeholder="หมายเหตุ HR (ถ้าตีกลับต้องระบุเหตุผล)"
+                  value={hrNote}
+                  onChange={e => setHrNote(e.target.value)}
+                />
+                <div className="flex justify-end gap-2 mt-2">
+                  <button onClick={reject} disabled={busy} className="btn text-sm text-red-600">
+                    <IconX size={15} /> ตีกลับ
+                  </button>
+                  <button onClick={approve} disabled={busy} className="btn btn-primary text-sm">
+                    <IconCheck size={15} /> อนุมัติ
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Approved / rejected info */}
+            {detail.status === 'approved' && (
+              <div className="rounded-md border border-green-200 bg-green-50/50 p-3 text-xs text-green-900">
+                <p className="font-medium">
+                  <IconCheck size={13} className="inline" /> อนุมัติโดย {detail.approver_first_name} {detail.approver_last_name}
+                  {detail.approved_at && <> · {dayjs(detail.approved_at).format('D MMM HH:mm')}</>}
+                </p>
+                {detail.hr_notes && <p className="mt-1">หมายเหตุ HR: {detail.hr_notes}</p>}
+              </div>
+            )}
+            {detail.status === 'rejected' && (
+              <div className="rounded-md border border-red-200 bg-red-50/50 p-3 text-xs text-red-900">
+                <p className="font-medium"><IconAlertCircle size={13} className="inline" /> ตีกลับ</p>
+                {detail.hr_notes && <p className="mt-1">เหตุผล: {detail.hr_notes}</p>}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
