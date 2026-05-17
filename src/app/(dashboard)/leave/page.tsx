@@ -1,6 +1,6 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
-import { leaveApi, employeeApi, type LeaveQuotaRow, type LeaveType } from '@/lib/api'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import { leaveApi, employeeApi, holidayApi, type LeaveQuotaRow, type LeaveType } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
   IconPlus, IconCheck, IconX, IconCalendarOff,
@@ -61,8 +61,9 @@ type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'cancelled'
 
 const todayISO = () => dayjs().format('YYYY-MM-DD')
 
-/** Count working days (Mon–Fri) inclusive. Mirrors backend logic. */
-function countWorkingDays(startISO: string, endISO: string): number {
+/** Count working days inclusive. Mirrors backend logic — a working
+ *  day is Mon–Fri AND not a date in `holidaySet` (Set<'YYYY-MM-DD'>). */
+function countWorkingDays(startISO: string, endISO: string, holidaySet: Set<string> = new Set()): number {
   if (!startISO || !endISO) return 0
   const start = dayjs(startISO)
   const end = dayjs(endISO)
@@ -71,10 +72,32 @@ function countWorkingDays(startISO: string, endISO: string): number {
   let cur = start
   while (!cur.isAfter(end)) {
     const dow = cur.day()
-    if (dow !== 0 && dow !== 6) n++
+    const ymd = cur.format('YYYY-MM-DD')
+    if (dow !== 0 && dow !== 6 && !holidaySet.has(ymd)) n++
     cur = cur.add(1, 'day')
   }
   return n
+}
+
+/** "Straddle" detection — true when a non-working day (weekend or
+ *  holiday) sits between two working days in the range. Company policy:
+ *  must file each side as a separate request. */
+function straddlesNonWorking(startISO: string, endISO: string, holidaySet: Set<string> = new Set()): boolean {
+  if (!startISO || !endISO) return false
+  const start = dayjs(startISO)
+  const end = dayjs(endISO)
+  if (!start.isValid() || !end.isValid() || end.isBefore(start)) return false
+  let cur = start
+  let sawNonWorking = false
+  while (!cur.isAfter(end)) {
+    const dow = cur.day()
+    const ymd = cur.format('YYYY-MM-DD')
+    const isWorking = dow !== 0 && dow !== 6 && !holidaySet.has(ymd)
+    if (isWorking && sawNonWorking) return true
+    if (!isWorking) sawNonWorking = true
+    cur = cur.add(1, 'day')
+  }
+  return false
 }
 
 export default function LeavePage() {
@@ -127,6 +150,14 @@ export default function LeavePage() {
   // so HR can add a new column to the team-quota table and see it
   // reflect immediately without flipping between two pages.
   const [typesModalOpen, setTypesModalOpen] = useState(false)
+  // Holiday set for the current + next year so the working-day count
+  // and straddle preview match what the backend will compute. Fetched
+  // once on mount; refreshed if the user changes the year selector.
+  const [holidaySet, setHolidaySet] = useState<Set<string>>(new Set())
+  // Inline "ยกเลิกคำขออนุมัติแล้ว" (HR/owner) — keys the row whose
+  // confirmation strip is open + the reason text being typed.
+  const [cancelApprovingId, setCancelApprovingId] = useState<string | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
   // Doc preview modal — both viewers and HR queue use it.
   const [docPreview, setDocPreview] = useState<string | null>(null)
 
@@ -147,6 +178,16 @@ export default function LeavePage() {
     // rows), so we fetch types regardless of role.
     const typesRes = await leaveApi.types().catch(() => null)
     if (typesRes) setTypes(typesRes.data.data || [])
+
+    // Holidays for the current year fuel the form's working-day count
+    // and the straddle warning. Failure is OK — degrades to weekend-
+    // only logic which matches the backend's degraded path.
+    try {
+      const r = await holidayApi.list(dayjs().year())
+      const rows = (r.data?.data || []) as Array<{ date: string }>
+      setHolidaySet(new Set(rows.map(h => dayjs(h.date).format('YYYY-MM-DD'))))
+    } catch {}
+
     if (!isOwner) {
       const [quotaRes, histRes] = await Promise.allSettled([
         leaveApi.myQuota(), leaveApi.myHistory(),
@@ -208,8 +249,15 @@ export default function LeavePage() {
 
   // Live day-count preview based on what the user has typed so far.
   const previewDays = useMemo(
-    () => countWorkingDays(form.startDate, form.endDate),
-    [form.startDate, form.endDate]
+    () => countWorkingDays(form.startDate, form.endDate, holidaySet),
+    [form.startDate, form.endDate, holidaySet]
+  )
+  // Block continuous leave that jumps over a non-working day.
+  // Backend enforces the same rule, but failing client-side gives the
+  // user a clearer error before they hit "ส่ง".
+  const previewStraddles = useMemo(
+    () => straddlesNonWorking(form.startDate, form.endDate, holidaySet),
+    [form.startDate, form.endDate, holidaySet]
   )
   const selectedQuota = quota.find(q => q.leave_type_id === form.leaveTypeId)
   const selectedType = useMemo(
@@ -232,7 +280,8 @@ export default function LeavePage() {
     : false
 
   const canSubmit = form.leaveTypeId && form.startDate && form.endDate && form.reason.trim()
-    && !datesInvalid && previewDays > 0 && !quotaWarning && !advanceShort && !docMissing && !submitting
+    && !datesInvalid && previewDays > 0 && !quotaWarning && !advanceShort && !docMissing
+    && !previewStraddles && !submitting
 
   const submit = async () => {
     if (!canSubmit) {
@@ -240,8 +289,10 @@ export default function LeavePage() {
         setFormMsg('กรุณากรอกข้อมูลให้ครบ')
       } else if (datesInvalid) {
         setFormMsg('วันสิ้นสุดต้องไม่ก่อนวันเริ่มลา')
+      } else if (previewStraddles) {
+        setFormMsg('ช่วงที่เลือกคร่อมวันหยุด/วันหยุดราชการ — กรุณาแยกยื่นเป็น 2 ครั้ง (ก่อนและหลังวันหยุด)')
       } else if (previewDays === 0) {
-        setFormMsg('ช่วงวันที่เลือกไม่มีวันทำงาน (ส.-อา. ไม่นับ)')
+        setFormMsg('ช่วงวันที่เลือกไม่มีวันทำงาน (ส.-อา./วันหยุดไม่นับ)')
       } else if (advanceShort) {
         setFormMsg(`ลาประเภทนี้ต้องยื่นล่วงหน้าอย่างน้อย ${selectedType?.advance_notice_days} วัน`)
       } else if (docMissing) {
@@ -605,11 +656,13 @@ export default function LeavePage() {
             </div>
           </div>
 
-          {/* Day preview / warnings */}
+          {/* Day preview / warnings. Order matters — straddle wins
+              over zero-day so the user gets the actionable error
+              ("split into two") instead of the generic one. */}
           {(form.startDate && form.endDate) && (
             <div className={clsx(
               'mt-3 px-3 py-2 rounded-[10px] text-xs flex items-center gap-2',
-              datesInvalid || quotaWarning || advanceShort
+              datesInvalid || quotaWarning || advanceShort || previewStraddles
                 ? 'bg-red-50 text-red-700'
                 : previewDays === 0
                   ? 'bg-[#FAEEDA] text-[#633806]'
@@ -617,13 +670,15 @@ export default function LeavePage() {
             )}>
               {datesInvalid
                 ? <>วันสิ้นสุดอยู่ก่อนวันเริ่มลา</>
-                : advanceShort
-                  ? <>ต้องยื่นล่วงหน้าอย่างน้อย {selectedType?.advance_notice_days} วัน — เลือกวันเริ่มตั้งแต่ {dayjs(minStartDate).format('D MMM YY')} เป็นต้นไป</>
-                  : previewDays === 0
-                    ? <>ช่วงนี้ไม่มีวันทำงาน (เสาร์-อาทิตย์ไม่นับเป็นวันลา)</>
-                    : quotaWarning
-                      ? <>วันลาไม่พอ — คงเหลือ {selectedQuota?.remaining_days} วัน แต่ขอ {previewDays} วัน</>
-                      : <>ขอลา <strong>{previewDays} วัน</strong> {selectedQuota && <>· จะเหลือ {selectedQuota.remaining_days - previewDays}/{selectedQuota.total_days} วัน</>}</>
+                : previewStraddles
+                  ? <><IconAlertCircle size={13} className="flex-shrink-0" /> ช่วงนี้คร่อมวันหยุด/วันหยุดราชการ — กรุณาแยกยื่นเป็น 2 ครั้ง (ก่อนและหลังวันหยุด)</>
+                  : advanceShort
+                    ? <>ต้องยื่นล่วงหน้าอย่างน้อย {selectedType?.advance_notice_days} วัน — เลือกวันเริ่มตั้งแต่ {dayjs(minStartDate).format('D MMM YY')} เป็นต้นไป</>
+                    : previewDays === 0
+                      ? <>ช่วงนี้ไม่มีวันทำงาน (เสาร์-อาทิตย์/วันหยุดราชการไม่นับเป็นวันลา)</>
+                      : quotaWarning
+                        ? <>วันลาไม่พอ — คงเหลือ {selectedQuota?.remaining_days} วัน แต่ขอ {previewDays} วัน</>
+                        : <>ขอลา <strong>{previewDays} วันทำการ</strong> {selectedQuota && <>· หลังลา จะเหลือ <strong>{selectedQuota.remaining_days - previewDays}/{selectedQuota.total_days}</strong> วัน</>}</>
               }
             </div>
           )}
@@ -1111,11 +1166,13 @@ export default function LeavePage() {
                     <th className="py-2 pr-3 font-medium">สถานะ</th>
                     <th className="py-2 pr-3 font-medium hidden md:table-cell">เหตุผล</th>
                     <th className="py-2 pr-3 font-medium hidden lg:table-cell">หลักฐาน</th>
+                    <th className="py-2 pr-3 font-medium text-right whitespace-nowrap">การจัดการ</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/[0.04]">
                   {allRequests.map(r => (
-                    <tr key={r.id} className="hover:bg-gray-50/60">
+                    <Fragment key={r.id}>
+                    <tr className="hover:bg-gray-50/60">
                       <td className="py-2 pr-3">
                         <div className="flex items-center gap-2 min-w-0">
                           <EmployeeAvatar person={r} size={24} />
@@ -1149,7 +1206,66 @@ export default function LeavePage() {
                           </button>
                         ) : <span className="text-gray-300 text-[11px]">—</span>}
                       </td>
+                      <td className="py-2 pr-3 text-right">
+                        {r.status === 'approved' ? (
+                          <button
+                            onClick={() => { setCancelApprovingId(r.id); setCancelReason('') }}
+                            className="text-[11px] px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 inline-flex items-center gap-1"
+                            title="ยกเลิกคำขอที่อนุมัติแล้ว (คืนโควตา + ลบ attendance)"
+                          >
+                            <IconX size={11} /> ยกเลิก
+                          </button>
+                        ) : (
+                          <span className="text-gray-300 text-[11px]">—</span>
+                        )}
+                      </td>
                     </tr>
+                    {cancelApprovingId === r.id && (
+                      <tr>
+                        <td colSpan={8} className="py-2 pr-3">
+                          <div className="rounded-[8px] bg-red-50/60 border border-red-100 p-2.5 flex flex-col gap-2">
+                            <p className="text-[11px] text-red-700">
+                              ⚠️ ยกเลิกคำขอนี้จะ <strong>คืนโควตา {r.days_count} วัน</strong> และ
+                              <strong> ลบ attendance "ลา"</strong> ของช่วง {dayjs(r.start_date).format('D MMM')}–{dayjs(r.end_date).format('D MMM YY')} ออก
+                            </p>
+                            <textarea
+                              className="input text-[11px] min-h-[40px]"
+                              placeholder="เหตุผลที่ยกเลิก (ไม่บังคับ — จะแจ้งให้พนักงานทราบ)"
+                              value={cancelReason}
+                              onChange={e => setCancelReason(e.target.value)}
+                              autoFocus
+                            />
+                            <div className="flex gap-1.5 justify-end">
+                              <button
+                                onClick={async () => {
+                                  setActingId(r.id)
+                                  try {
+                                    await leaveApi.cancelApproved(r.id, cancelReason.trim() || undefined)
+                                    flash('ยกเลิกคำขออนุมัติแล้ว')
+                                    setCancelApprovingId(null); setCancelReason('')
+                                    loadAllRequests(allReqStatus)
+                                    loadTeamQuotas(teamYear)
+                                  } catch (e: any) {
+                                    flash(e?.response?.data?.message || 'ยกเลิกไม่สำเร็จ', false)
+                                  } finally { setActingId(null) }
+                                }}
+                                disabled={actingId === r.id}
+                                className="btn text-[11px] text-red-600 border-red-200 hover:bg-red-50"
+                              >
+                                ยืนยันยกเลิก
+                              </button>
+                              <button
+                                onClick={() => { setCancelApprovingId(null); setCancelReason('') }}
+                                className="btn text-[11px]"
+                              >
+                                ปิด
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

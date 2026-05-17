@@ -242,6 +242,11 @@ export const leaveApi = {
     reason: string; document?: string
   }) => api.post('/leave/request', data),
   cancel: (id: string) => api.post(`/leave/${id}/cancel`),
+  // HR/owner only — voids an already-approved leave: refunds the quota
+  // and removes the leave-marked attendance rows in one backend
+  // transaction. Used when an employee's plans change after approval.
+  cancelApproved: (id: string, reason?: string) =>
+    api.post(`/leave/${id}/cancel-approved`, { reason }),
   pending: () => api.get('/leave/pending'),
   approve: (id: string, action: 'approved' | 'rejected', hrNotes?: string) =>
     api.patch(`/leave/${id}/approve`, { action, hrNotes }),
