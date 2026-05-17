@@ -119,6 +119,10 @@ export default function LeavePage() {
   // when the team-quota table is empty, so HR doesn't need to find a
   // clickable number first.
   const [setQuotaOpen, setSetQuotaOpen] = useState(false)
+  // Set when HR clicks the "+" in an empty quota cell — opens the same
+  // AdminSetQuotaModal but with the employee + leave-type already chosen
+  // (and locked) so the form is one input away from done.
+  const [prefillSetQuota, setPrefillSetQuota] = useState<{ employeeId: string; leaveTypeId: string } | null>(null)
   // Doc preview modal — both viewers and HR queue use it.
   const [docPreview, setDocPreview] = useState<string | null>(null)
 
@@ -132,14 +136,17 @@ export default function LeavePage() {
   const [actingId, setActingId] = useState<string | null>(null)
 
   const load = async () => {
-    // Owner skips the personal calls (types/quota/history). They have no
-    // quota row and the type-picker is only useful for filing requests,
-    // which they can't do.
+    // Owner skips the personal calls (quota/history) — they have no
+    // quota row and no personal request log. But owner DOES need the
+    // leave types list to render team-quota table columns (which are
+    // now derived from the master types list, not from existing quota
+    // rows), so we fetch types regardless of role.
+    const typesRes = await leaveApi.types().catch(() => null)
+    if (typesRes) setTypes(typesRes.data.data || [])
     if (!isOwner) {
-      const [typesRes, quotaRes, histRes] = await Promise.allSettled([
-        leaveApi.types(), leaveApi.myQuota(), leaveApi.myHistory(),
+      const [quotaRes, histRes] = await Promise.allSettled([
+        leaveApi.myQuota(), leaveApi.myHistory(),
       ])
-      if (typesRes.status === 'fulfilled') setTypes(typesRes.value.data.data || [])
       if (quotaRes.status === 'fulfilled') setQuota(quotaRes.value.data.data || [])
       if (histRes.status === 'fulfilled') setHistory(histRes.value.data.data || [])
     }
@@ -340,23 +347,23 @@ export default function LeavePage() {
     return c
   }, [history])
 
-  // Pivot the flat (employee × leave_type) response into a table layout:
-  // columns = union of leave-type names; rows = one per employee, with
-  // a cells map keyed by leave-type name. Column order is alphabetical
-  // (Thai locale) so a leave_type that appears for some employees but
-  // not others still gets a stable column slot. Applies the live search
-  // filter at the row level so the column set doesn't shift while
-  // typing.
+  // Pivot the flat (employee × leave_type) response into a table layout.
+  // Columns now come from the canonical leave_types list (active rows
+  // with days_per_year > 0) instead of being derived from existing quota
+  // rows — that way a freshly-added leave type shows up as a column for
+  // every employee immediately, even before any quotas have been set.
+  // Cells without a matching quota render as a "+" the user can click
+  // to seed that specific (employee, leave_type) pair via AdminSetQuotaModal.
   const { teamColumns, teamRows } = useMemo(() => {
-    const cols = new Set<string>()
-    const byEmp = new Map<string, { emp: LeaveQuotaRow; cells: Map<string, LeaveQuotaRow> }>()
+    const cols = types
+      .filter(t => t.is_active && (Number(t.days_per_year) || 0) > 0)
+      .map(t => ({ id: t.id, name: t.name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'th'))
+    const byEmp = new Map<string, { emp: LeaveQuotaRow; cellsByTypeId: Map<string, LeaveQuotaRow> }>()
     for (const r of teamQuotas) {
-      const tname = r.leave_type_name || ''
-      if (tname) cols.add(tname)
-      if (!byEmp.has(r.employee_id)) byEmp.set(r.employee_id, { emp: r, cells: new Map() })
-      if (tname) byEmp.get(r.employee_id)!.cells.set(tname, r)
+      if (!byEmp.has(r.employee_id)) byEmp.set(r.employee_id, { emp: r, cellsByTypeId: new Map() })
+      byEmp.get(r.employee_id)!.cellsByTypeId.set(r.leave_type_id, r)
     }
-    const columns = Array.from(cols).sort((a, b) => a.localeCompare(b, 'th'))
     const q = teamSearch.trim().toLowerCase()
     const allRows = Array.from(byEmp.values())
     const filtered = q === '' ? allRows : allRows.filter(({ emp }) => {
@@ -370,8 +377,8 @@ export default function LeavePage() {
       `${a.emp.first_name || ''} ${a.emp.last_name || ''}`
         .localeCompare(`${b.emp.first_name || ''} ${b.emp.last_name || ''}`, 'th')
     )
-    return { teamColumns: columns, teamRows: rows }
-  }, [teamQuotas, teamSearch])
+    return { teamColumns: cols, teamRows: rows }
+  }, [teamQuotas, teamSearch, types])
 
   // "X ปี Y เดือน" tenure from an ISO date, used in the start-date /
   // hire-date columns. Returns "—" for missing dates and "0 วัน" for
@@ -396,21 +403,17 @@ export default function LeavePage() {
   // BOM + UTF-8 so Excel opens Thai text without garbling.
   const exportTeamCSV = () => {
     const header = ['รหัสพนักงาน', 'ชื่อ', 'ชื่อเล่น', 'แผนก', 'ตำแหน่ง',
-      'วันที่เริ่มงาน', 'อายุงาน', 'วันที่จ้าง',
-      ...teamColumns.flatMap(c => [`${c} (ใช้)`, `${c} (เต็ม)`, `${c} (เหลือ)`])]
-    const lines = teamRows.map(({ emp, cells }) => {
+      ...teamColumns.flatMap(c => [`${c.name} (ใช้)`, `${c.name} (เต็ม)`, `${c.name} (เหลือ)`])]
+    const lines = teamRows.map(({ emp, cellsByTypeId }) => {
       const base = [
         emp.emp_code || '',
         `${emp.first_name || ''} ${emp.last_name || ''}`.trim(),
         emp.nickname || '',
         emp.department_name || '',
         emp.position || '',
-        emp.start_date || '',
-        formatTenure(emp.start_date),
-        emp.hire_date || '',
       ]
       const quotaCols = teamColumns.flatMap(c => {
-        const cell = cells.get(c)
+        const cell = cellsByTypeId.get(c.id)
         if (!cell) return ['', '', '']
         return [String(cell.used_days || 0), String(cell.total_days || 0), String(cell.remaining_days ?? '')]
       })
@@ -968,12 +971,12 @@ export default function LeavePage() {
                     <th className="py-2 pr-3 font-medium">พนักงาน</th>
                     <th className="py-2 pr-3 font-medium hidden sm:table-cell">แผนก</th>
                     {teamColumns.map(c => (
-                      <th key={c} className="py-2 pr-3 font-medium text-right whitespace-nowrap">{c}</th>
+                      <th key={c.id} className="py-2 pr-3 font-medium text-right whitespace-nowrap">{c.name}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/[0.04]">
-                  {teamRows.map(({ emp, cells }) => (
+                  {teamRows.map(({ emp, cellsByTypeId }) => (
                     <tr key={emp.employee_id} className="hover:bg-gray-50/60">
                       <td className="py-2 pr-3 text-[12px] text-gray-500 tabular-nums whitespace-nowrap">
                         {emp.emp_code || <span className="text-gray-300">—</span>}
@@ -996,9 +999,23 @@ export default function LeavePage() {
                         {emp.department_name || <span className="text-gray-300">—</span>}
                       </td>
                       {teamColumns.map(c => {
-                        const cell = cells.get(c)
+                        const cell = cellsByTypeId.get(c.id)
                         if (!cell) {
-                          return <td key={c} className="py-2 pr-3 text-right text-[12px] text-gray-300">—</td>
+                          // No quota row for this (employee, type) yet —
+                          // render a clickable "+" that opens the same
+                          // AdminSetQuotaModal pre-filled with this pair
+                          // so HR can seed it in one click.
+                          return (
+                            <td key={c.id} className="py-2 pr-3 text-right">
+                              <button
+                                onClick={() => setPrefillSetQuota({ employeeId: emp.employee_id, leaveTypeId: c.id })}
+                                className="text-[13px] text-gray-300 hover:text-[#1D9E75] hover:bg-gray-50 px-2 py-0.5 rounded transition-colors"
+                                title={`ตั้งโควตา "${c.name}" ของพนักงานคนนี้`}
+                              >
+                                +
+                              </button>
+                            </td>
+                          )
                         }
                         const total = Number(cell.total_days) || 0
                         const used = Number(cell.used_days) || 0
@@ -1009,7 +1026,7 @@ export default function LeavePage() {
                           : pct >= 0.8   ? '#BA7517'
                           : '#1D9E75'
                         return (
-                          <td key={c} className="py-2 pr-3 text-right">
+                          <td key={c.id} className="py-2 pr-3 text-right">
                             <button
                               onClick={() => setQuotaEditing(cell)}
                               className="inline-flex flex-col items-end leading-tight group cursor-pointer"
@@ -1167,6 +1184,19 @@ export default function LeavePage() {
           onSaved={() => {
             setSetQuotaOpen(false)
             flash('บันทึกโควตาแล้ว')
+            loadTeamQuotas(teamYear)
+          }}
+          onError={(text) => flash(text, false)}
+        />
+      )}
+      {prefillSetQuota && (
+        <AdminSetQuotaModal
+          year={teamYear}
+          initial={prefillSetQuota}
+          onClose={() => setPrefillSetQuota(null)}
+          onSaved={() => {
+            setPrefillSetQuota(null)
+            flash('สร้างโควตาแล้ว')
             loadTeamQuotas(teamYear)
           }}
           onError={(text) => flash(text, false)}
@@ -1468,20 +1498,26 @@ function QuotaEditModal({ row, year, onClose, onSaved, onError }: {
 // reachable from a dedicated button and works for the entire upsert
 // space (employee × leave_type × year).
 
-function AdminSetQuotaModal({ year, onClose, onSaved, onError }: {
+function AdminSetQuotaModal({ year, onClose, onSaved, onError, initial }: {
   year: number
   onClose: () => void
   onSaved: () => void
   onError: (text: string) => void
+  // When set, the modal opens with these IDs already selected and the
+  // pickers locked — used by the empty-cell "+" flow on the team table
+  // so HR doesn't have to pick from a long list when they meant a
+  // specific row.
+  initial?: { employeeId: string; leaveTypeId: string }
 }) {
   const [types, setTypes] = useState<LeaveType[]>([])
   const [employees, setEmployees] = useState<any[]>([])
   const [allQuotas, setAllQuotas] = useState<LeaveQuotaRow[]>([])
-  const [employeeId, setEmployeeId] = useState('')
-  const [leaveTypeId, setLeaveTypeId] = useState('')
+  const [employeeId, setEmployeeId] = useState(initial?.employeeId || '')
+  const [leaveTypeId, setLeaveTypeId] = useState(initial?.leaveTypeId || '')
   const [days, setDays] = useState<number | ''>('')
   const [saving, setSaving] = useState(false)
   const [localErr, setLocalErr] = useState('')
+  const locked = !!initial
 
   useEffect(() => {
     (async () => {
@@ -1559,7 +1595,12 @@ function AdminSetQuotaModal({ year, onClose, onSaved, onError }: {
 
           <div>
             <label className="label">พนักงาน</label>
-            <select className="input" value={employeeId} onChange={e => setEmployeeId(e.target.value)}>
+            <select
+              className={clsx('input', locked && 'opacity-60 cursor-not-allowed')}
+              value={employeeId}
+              disabled={locked}
+              onChange={e => setEmployeeId(e.target.value)}
+            >
               <option value="">— เลือกพนักงาน —</option>
               {employees.map(e => (
                 <option key={e.id} value={e.id}>
@@ -1572,7 +1613,12 @@ function AdminSetQuotaModal({ year, onClose, onSaved, onError }: {
 
           <div>
             <label className="label">ประเภทการลา</label>
-            <select className="input" value={leaveTypeId} onChange={e => setLeaveTypeId(e.target.value)}>
+            <select
+              className={clsx('input', locked && 'opacity-60 cursor-not-allowed')}
+              value={leaveTypeId}
+              disabled={locked}
+              onChange={e => setLeaveTypeId(e.target.value)}
+            >
               <option value="">— เลือกประเภท —</option>
               {types.map(t => (
                 <option key={t.id} value={t.id} disabled={!t.is_active}>
