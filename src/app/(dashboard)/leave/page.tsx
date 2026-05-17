@@ -79,7 +79,11 @@ function countWorkingDays(startISO: string, endISO: string): number {
 
 export default function LeavePage() {
   const { user } = useAuthStore()
-  const toast = useToast()
+  // Renamed to avoid the name clash with the page-level `toast` state
+  // declared below — the page already had its own toast slot (text+ok
+  // banner) before the global ToastApi was introduced. Both stay so the
+  // existing banner UI keeps working alongside the new `.confirm()`.
+  const toastApi = useToast()
   const role = user?.role
   // Owner has no quota and no one to approve them — same rule as
   // /attendance and /ot. Page becomes approval-only for owner.
@@ -313,7 +317,7 @@ export default function LeavePage() {
   }
 
   const cancelOwn = async (id: string) => {
-    const ok = await toast.confirm('ยกเลิกคำขอลานี้?', { confirmText: 'ยกเลิกคำขอ', tone: 'danger' })
+    const ok = await toastApi.confirm('ยกเลิกคำขอลานี้?', { confirmText: 'ยกเลิกคำขอ', tone: 'danger' })
     if (!ok) return
     setActingId(id)
     try {

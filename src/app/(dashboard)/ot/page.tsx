@@ -55,7 +55,7 @@ const todayISO = () => dayjs().format('YYYY-MM-DD')
 
 export default function OTPage() {
   const { user } = useAuthStore()
-  const toast = useToast()
+  const toastApi = useToast()
   const role = user?.role
   const isOwner = role === 'owner'
   const canSeePending = role === 'hr' || role === 'owner'
@@ -162,7 +162,7 @@ export default function OTPage() {
   }
 
   const cancelOwn = async (id: string) => {
-    const ok = await toast.confirm('ยกเลิกคำขอ OT นี้?', { confirmText: 'ยกเลิกคำขอ', tone: 'danger' })
+    const ok = await toastApi.confirm('ยกเลิกคำขอ OT นี้?', { confirmText: 'ยกเลิกคำขอ', tone: 'danger' })
     if (!ok) return
     setActingId(id)
     try {

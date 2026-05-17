@@ -43,7 +43,7 @@ type Filter = 'all' | 'unread'
 
 export default function NotificationsPage() {
   const router = useRouter()
-  const toast = useToast()
+  const toastApi = useToast()
   const [items, setItems] = useState<Notification[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -106,7 +106,7 @@ export default function NotificationsPage() {
   }
 
   const handleClearRead = async () => {
-    const ok = await toast.confirm(
+    const ok = await toastApi.confirm(
       'รายการที่อ่านแล้วทั้งหมดจะถูกลบถาวร',
       { title: 'ลบการแจ้งเตือนที่อ่านแล้ว?', tone: 'danger', confirmText: 'ลบทั้งหมด' }
     )
