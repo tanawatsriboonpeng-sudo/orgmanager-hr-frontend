@@ -76,6 +76,7 @@ export default function EmployeesPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState({ text: '', ok: true })
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   const [positions, setPositions] = useState<Position[]>([])
 
@@ -286,13 +287,26 @@ export default function EmployeesPage() {
     setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50)
   }
 
+  // Suspending an account locks the user out immediately — a misclick
+  // is expensive. Confirm first, especially on the suspend path. We
+  // also gate via togglingId so a double-click from a slow connection
+  // can't fire two PATCH calls (the backend's guards would 400 the
+  // second, but the UI shouldn't even let it happen).
   const handleToggleActive = async (emp: Employee) => {
+    if (togglingId) return
+    const willDisable = emp.is_active
+    const verb = willDisable ? 'ระงับ' : 'เปิดใช้งาน'
+    const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'พนักงาน'
+    if (!confirm(`ยืนยัน${verb}บัญชีของ ${fullName}?`)) return
+    setTogglingId(emp.id)
     try {
       await api.patch(`/employees/${emp.id}/toggle-active`)
-      setMsg({ text: emp.is_active ? `ระงับบัญชี ${emp.first_name} แล้ว` : `เปิดใช้งาน ${emp.first_name} แล้ว`, ok: true })
+      setMsg({ text: willDisable ? `ระงับบัญชี ${emp.first_name} แล้ว` : `เปิดใช้งาน ${emp.first_name} แล้ว`, ok: true })
       load()
     } catch (e: any) {
       setMsg({ text: e.response?.data?.message || 'เปลี่ยนสถานะไม่สำเร็จ', ok: false })
+    } finally {
+      setTogglingId(null)
     }
   }
 

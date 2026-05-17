@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   kpiApi, employeeApi, departmentApi,
   type KpiCriterion, type KpiReview, type KpiReviewStatus, type KpiScoreEntry,
@@ -55,9 +55,16 @@ export default function KpiPage() {
   const [editingReview, setEditingReview] = useState<KpiReview | 'new' | null>(null)
   const [editingCriterion, setEditingCriterion] = useState<KpiCriterion | 'new' | null>(null)
 
+  // Ref-tracked dismiss timer so back-to-back flash() calls don't leave
+  // an orphan timer that clobbers a later message, and cleanup on
+  // unmount avoids the "setState on unmounted" warning when the user
+  // navigates away mid-flash.
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current) }, [])
   const flash = (msg: string, isError = false) => {
     if (isError) { setErr(msg); setInfo('') } else { setInfo(msg); setErr('') }
-    setTimeout(() => { setErr(''); setInfo('') }, 4000)
+    if (flashTimer.current) clearTimeout(flashTimer.current)
+    flashTimer.current = setTimeout(() => { setErr(''); setInfo(''); flashTimer.current = null }, 4000)
   }
 
   const loadReviews = useCallback(async () => {

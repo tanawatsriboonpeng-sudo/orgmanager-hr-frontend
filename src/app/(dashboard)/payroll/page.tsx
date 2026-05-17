@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { payrollApi, employeeApi, type PayrollRecord, type PayrollStatus } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
@@ -69,9 +69,16 @@ export default function PayrollPage() {
     return acc
   }, [records])
 
+  // Track the dismiss timer in a ref so back-to-back flash() calls don't
+  // leave an orphan timer that clobbers a later message, and clear it on
+  // unmount to avoid the React "setState on unmounted component" warning
+  // when the user navigates away mid-flash.
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current) }, [])
   const flash = (msg: string, isError = false) => {
     if (isError) { setErr(msg); setInfo('') } else { setInfo(msg); setErr('') }
-    setTimeout(() => { setErr(''); setInfo('') }, 4000)
+    if (flashTimer.current) clearTimeout(flashTimer.current)
+    flashTimer.current = setTimeout(() => { setErr(''); setInfo(''); flashTimer.current = null }, 4000)
   }
 
   return (
