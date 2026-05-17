@@ -1,7 +1,15 @@
 'use client'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { useEffect, useRef, useState } from 'react'
 import { employeeApi, orgApi, officeLocationApi, lineAuthApi, type OrgSettings, type OfficeLocation } from '@/lib/api'
+
+// Leaflet hits window on import, so load the map only on the client.
+// The lazy chunk also keeps the initial /settings bundle slim.
+const LocationPicker = dynamic(() => import('@/components/maps/LocationPicker'), {
+  ssr: false,
+  loading: () => <div className="h-[320px] rounded-md bg-gray-50 border border-black/[0.06] flex items-center justify-center text-xs text-gray-400">กำลังโหลดแผนที่…</div>,
+})
 import { useAuthStore } from '@/lib/store'
 import {
   initLiff, isLiffConfigured, isInLiff, isLoggedInLine,
@@ -694,6 +702,20 @@ function OfficeLocationForm({ initial, onCancel, onSaved, onError }: {
           placeholder="เช่น สำนักงานใหญ่ / สาขาเชียงใหม่"
           value={name}
           onChange={e => setName(e.target.value)}
+        />
+      </div>
+      {/* Map preview — click to set pin. The lat/lng text boxes stay
+          editable so users can paste coords from Google Maps, and the
+          map follows whichever value is current. The green circle is
+          the live radius from the slider so the user can see exactly
+          what area their employees can check in from. */}
+      <div>
+        <p className="text-[11px] text-gray-500 mb-1">คลิกบนแผนที่เพื่อย้ายหมุด หรือกรอกพิกัดเอง</p>
+        <LocationPicker
+          lat={Number(lat) || (initial ? initial.lat : 13.7563)}
+          lng={Number(lng) || (initial ? initial.lng : 100.5018)}
+          radius={radius}
+          onPick={(la, ln) => { setLat(la.toFixed(6)); setLng(ln.toFixed(6)) }}
         />
       </div>
       <div className="grid grid-cols-2 gap-2">
