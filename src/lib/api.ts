@@ -1008,4 +1008,56 @@ export const officeLocationApi = {
   delete: (id: string) => api.delete(`/office-locations/${id}`),
 }
 
+// ============================================================
+// SUPPORT TICKETS — /support
+// ============================================================
+// Two-way help channel. Employee submits a ticket (bug / help /
+// feature / hr / other); HR + owner respond and resolve. Backend
+// enforces "employee sees own only, HR/owner sees all".
+export type SupportCategory = 'bug' | 'help' | 'feature' | 'hr' | 'other'
+export type SupportStatus = 'open' | 'answered' | 'closed'
+export interface SupportTicket {
+  id: string
+  user_id: string
+  employee_id: string | null
+  category: SupportCategory
+  subject: string
+  description: string
+  attachment: string | null
+  status: SupportStatus
+  hr_response: string | null
+  responded_by: string | null
+  responded_at: string | null
+  closed_at: string | null
+  closed_by: string | null
+  created_at: string
+  updated_at: string
+  // joined
+  requester_first_name?: string | null
+  requester_last_name?: string | null
+  requester_nickname?: string | null
+  requester_avatar_url?: string | null
+  requester_email?: string | null
+  requester_role?: string | null
+  responder_first_name?: string | null
+  responder_last_name?: string | null
+  responder_avatar_url?: string | null
+}
+export interface SupportTicketCreate {
+  category: SupportCategory
+  subject: string
+  description: string
+  attachment?: string | null
+}
+export const supportApi = {
+  list: (params?: { status?: SupportStatus; category?: SupportCategory; limit?: number }) =>
+    api.get('/support/tickets', { params }),
+  getOne: (id: string) => api.get(`/support/tickets/${id}`),
+  create: (data: SupportTicketCreate) => api.post('/support/tickets', data),
+  respond: (id: string, response: string, closeAfter = false) =>
+    api.post(`/support/tickets/${id}/respond`, { response, closeAfter }),
+  close: (id: string) => api.post(`/support/tickets/${id}/close`),
+  reopen: (id: string) => api.post(`/support/tickets/${id}/reopen`),
+}
+
 export default api

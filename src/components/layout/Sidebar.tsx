@@ -10,7 +10,7 @@ import {
   IconSpeakerphone, IconHierarchy, IconHistory,
   IconBuilding, IconLogout, IconChevronRight,
   IconSettings, IconCrown, IconUsers, IconUser, IconKey,
-  IconMenu2, IconX, IconCalendarTime, IconSparkles,
+  IconMenu2, IconX, IconCalendarTime, IconSparkles, IconLifebuoy,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
@@ -33,6 +33,7 @@ const ROLE_MENUS = {
     { href: '/announcements', icon: IconSpeakerphone, label: 'ประกาศ' },
     { href: '/employees', icon: IconUsers, label: 'พนักงาน' },
     { href: '/org-chart', icon: IconHierarchy, label: 'แผนผัง' },
+    { href: '/support', icon: IconLifebuoy, label: 'แจ้งปัญหา/ติดต่อ' },
     { href: '/audit-logs', icon: IconHistory, label: 'ประวัติการดำเนินการ' },
   ],
   hr: [
@@ -48,6 +49,7 @@ const ROLE_MENUS = {
     { href: '/projects', icon: IconClipboardList, label: 'โปรเจกต์' },
     { href: '/cleaning', icon: IconSparkles, label: 'ทำความสะอาด' },
     { href: '/announcements', icon: IconSpeakerphone, label: 'ประกาศ' },
+    { href: '/support', icon: IconLifebuoy, label: 'แจ้งปัญหา/ติดต่อ' },
   ],
   employee: [
     { href: '/dashboard', icon: IconLayoutDashboard, label: 'หน้าหลัก' },
@@ -59,6 +61,7 @@ const ROLE_MENUS = {
     { href: '/projects', icon: IconClipboardList, label: 'โปรเจกต์' },
     { href: '/cleaning', icon: IconSparkles, label: 'ทำความสะอาด' },
     { href: '/announcements', icon: IconSpeakerphone, label: 'ประกาศ' },
+    { href: '/support', icon: IconLifebuoy, label: 'แจ้งปัญหา/ติดต่อ' },
   ],
 }
 
