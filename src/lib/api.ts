@@ -504,20 +504,31 @@ export interface CalendarEvent {
   created_by_name?: string | null
   created_at?: string
 }
+// Pulled out so the update signature can reference it without
+// self-referencing eventApi (`Parameters<typeof eventApi.create>` inside
+// the same object literal is a TS evaluation-order footgun).
+export interface CalendarEventInput {
+  title: string
+  description?: string
+  eventType?: string
+  startDate: string
+  endDate?: string
+  startTime?: string
+  endTime?: string
+  location?: string
+  color?: string
+  visibility?: 'all' | 'department' | 'specific'
+  departmentId?: string
+  attendeeIds?: string[]
+}
 export const eventApi = {
   // from/to inclusive YYYY-MM-DD. Omit to get the default window
   // (today − 30d .. today + 90d).
   list: (params?: { from?: string; to?: string }) =>
     api.get<{ success: boolean; data: CalendarEvent[] }>('/events', { params }),
-  create: (body: {
-    title: string; description?: string;
-    eventType?: string; startDate: string; endDate?: string;
-    startTime?: string; endTime?: string;
-    location?: string; color?: string;
-    visibility?: 'all' | 'department' | 'specific';
-    departmentId?: string; attendeeIds?: string[];
-  }) => api.post<{ success: boolean; data: CalendarEvent }>('/events', body),
-  update: (id: string, body: Partial<Parameters<typeof eventApi.create>[0]>) =>
+  create: (body: CalendarEventInput) =>
+    api.post<{ success: boolean; data: CalendarEvent }>('/events', body),
+  update: (id: string, body: Partial<CalendarEventInput>) =>
     api.patch<{ success: boolean }>(`/events/${id}`, body),
   delete: (id: string) => api.delete<{ success: boolean }>(`/events/${id}`),
 }

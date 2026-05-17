@@ -20,7 +20,7 @@ import {
   IconChevronLeft, IconChevronRight, IconPlus, IconCalendarTime,
   IconX, IconEdit, IconTrash, IconClock, IconMapPin, IconUsers,
 } from '@tabler/icons-react'
-import dayjs from 'dayjs'
+import dayjs, { type Dayjs } from 'dayjs'
 import clsx from 'clsx'
 import Link from 'next/link'
 import { useToast } from '@/components/ui/Toast'
@@ -54,7 +54,7 @@ const colorOf = (e: CalendarEvent) => EVENT_COLOR[e.color || 'blue'] || EVENT_CO
 // Build a 6×7 grid of dates that always starts on a Sunday and covers
 // the requested month — same shape Google Calendar / Outlook use, so
 // "previous/next month tail cells" feel familiar.
-function buildMonthGrid(year: number, monthIdx: number): dayjs.Dayjs[] {
+function buildMonthGrid(year: number, monthIdx: number): Dayjs[] {
   const first = dayjs(new Date(year, monthIdx, 1))
   const gridStart = first.subtract(first.day(), 'day') // back up to Sunday
   return Array.from({ length: 42 }, (_, i) => gridStart.add(i, 'day'))
