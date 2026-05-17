@@ -359,8 +359,12 @@ export default function LeavePage() {
   // Cells without a matching quota render as a "+" the user can click
   // to seed that specific (employee, leave_type) pair via AdminSetQuotaModal.
   const { teamColumns, teamRows } = useMemo(() => {
+    // All active leave types become columns — including ones with
+    // days_per_year = 0 (e.g. "วันหยุดพิเศษ"). HR sets the per-person
+    // quota by clicking the cell; the column needs to appear regardless
+    // of the type's default so HR has a place to click.
     const cols = types
-      .filter(t => t.is_active && (Number(t.days_per_year) || 0) > 0)
+      .filter(t => t.is_active)
       .map(t => ({ id: t.id, name: t.name }))
       .sort((a, b) => a.name.localeCompare(b.name, 'th'))
     const byEmp = new Map<string, { emp: LeaveQuotaRow; cellsByTypeId: Map<string, LeaveQuotaRow> }>()
