@@ -30,6 +30,12 @@ api.interceptors.response.use(
           { refreshToken }
         )
         Cookies.set('access_token', data.data.accessToken, { expires: 1 })
+        // Backend rotates the refresh token on every /auth/refresh call
+        // (revocation hardening) — the old hash is deleted server-side, so
+        // we must persist the new one or the next refresh will 401.
+        if (data.data.refreshToken) {
+          Cookies.set('refresh_token', data.data.refreshToken, { expires: 30, sameSite: 'strict' })
+        }
         original.headers.Authorization = `Bearer ${data.data.accessToken}`
         return api(original)
       } catch {
@@ -56,6 +62,11 @@ export const authApi = {
 export const attendanceApi = {
   checkIn: (lat?: number, lng?: number, method = 'gps', selfie?: string) =>
     api.post('/attendance/check-in', { lat, lng, method, selfie }),
+  // Off-site path — same endpoint but { offsite:true, reason } skips the
+  // GPS radius gate and the row sits at offsite_status='pending' until
+  // HR/owner approves. Selfie + reason are mandatory for review.
+  checkInOffsite: (data: { lat?: number; lng?: number; selfie: string; reason: string }) =>
+    api.post('/attendance/check-in', { ...data, method: 'gps', offsite: true }),
   checkOut: (lat?: number, lng?: number) =>
     api.post('/attendance/check-out', { lat, lng }),
   today: () => api.get('/attendance/today'),
@@ -65,6 +76,11 @@ export const attendanceApi = {
     api.get('/attendance/daily-summary', { params: { date } }),
   recentSummary: (days = 5) =>
     api.get('/attendance/recent-summary', { params: { days } }),
+  // HR/owner queue of off-site check-ins awaiting decision.
+  offsitePending: () => api.get('/attendance/offsite-pending'),
+  approveOffsite: (id: string) => api.post(`/attendance/offsite/${id}/approve`),
+  rejectOffsite: (id: string, reason?: string) =>
+    api.post(`/attendance/offsite/${id}/reject`, { reason }),
 }
 
 // Leave APIs

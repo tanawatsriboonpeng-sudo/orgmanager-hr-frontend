@@ -99,6 +99,9 @@ export default function AttendancePage() {
   const [daily, setDaily] = useState<any | null>(null)
   const [dailyExpanded, setDailyExpanded] = useState(true)
   const [dailyLoading, setDailyLoading] = useState(false)
+  // Off-site check-ins awaiting HR/owner approval. Loaded alongside the
+  // daily summary so refresh button covers both.
+  const [offsitePending, setOffsitePending] = useState<any[]>([])
 
   // Toast
   const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null)
@@ -138,12 +141,33 @@ export default function AttendancePage() {
     if (!canSeeDaily) return
     setDailyLoading(true)
     try {
-      const r = await attendanceApi.dailySummary(dailyDate)
-      setDaily(r.data.data)
-    } catch {
-      setDaily(null)
+      const [sumR, offsiteR] = await Promise.allSettled([
+        attendanceApi.dailySummary(dailyDate),
+        attendanceApi.offsitePending(),
+      ])
+      setDaily(sumR.status === 'fulfilled' ? sumR.value.data.data : null)
+      setOffsitePending(offsiteR.status === 'fulfilled' ? (offsiteR.value.data.data || []) : [])
     } finally { setDailyLoading(false) }
   }, [canSeeDaily, dailyDate])
+
+  const handleApproveOffsite = async (id: string) => {
+    try {
+      await attendanceApi.approveOffsite(id)
+      flash('อนุมัติการลงเวลานอกสถานที่แล้ว')
+      loadDaily()
+    } catch (e: any) {
+      flash(e.response?.data?.message || 'อนุมัติไม่สำเร็จ', false)
+    }
+  }
+  const handleRejectOffsite = async (id: string, reason: string) => {
+    try {
+      await attendanceApi.rejectOffsite(id, reason)
+      flash('ปฏิเสธคำขอแล้ว')
+      loadDaily()
+    } catch (e: any) {
+      flash(e.response?.data?.message || 'ปฏิเสธไม่สำเร็จ', false)
+    }
+  }
 
   useEffect(() => { loadToday() }, [loadToday])
   useEffect(() => { loadHistory() }, [loadHistory])
@@ -201,6 +225,23 @@ export default function AttendancePage() {
     } finally { setActing(false) }
   }
 
+  // Off-site path: same selfie + GPS coords, but the row goes into the
+  // backend as offsite_status='pending' and HR/owner has to approve. Used
+  // when an employee is legitimately working away from the office
+  // (client site, training, field work).
+  const doCheckInOffsite = async (selfie: string, reason: string) => {
+    setActing(true)
+    try {
+      const res = await attendanceApi.checkInOffsite({
+        lat: coords?.lat, lng: coords?.lng, selfie, reason,
+      })
+      flash(res.data.message)
+      loadToday(); loadDaily()
+    } catch (e: any) {
+      flash(e.response?.data?.message || 'ส่งคำขอไม่สำเร็จ', false)
+    } finally { setActing(false) }
+  }
+
   const doCheckOut = async () => {
     setActing(true)
     try {
@@ -252,6 +293,9 @@ export default function AttendancePage() {
           expanded={dailyExpanded}
           onToggle={() => setDailyExpanded(e => !e)}
           onRefresh={loadDaily}
+          offsitePending={offsitePending}
+          onApproveOffsite={handleApproveOffsite}
+          onRejectOffsite={handleRejectOffsite}
         />
       )}
 
@@ -346,6 +390,28 @@ export default function AttendancePage() {
                           <div className="text-[11px] text-gray-500 mt-1">{todayLog.status_detail}</div>
                         )}
                       </div>
+                    </div>
+                  )}
+                  {todayLog.is_offsite && (
+                    <div className="mt-2 pt-2 border-t border-[#1D9E75]/20">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600 text-xs">ลงเวลานอกสถานที่</span>
+                        <span className={clsx('badge text-[10px]',
+                          todayLog.offsite_status === 'approved' ? 'badge-green'
+                          : todayLog.offsite_status === 'rejected' ? 'badge-red'
+                          : 'badge-amber'
+                        )}>
+                          {todayLog.offsite_status === 'approved' ? 'อนุมัติแล้ว'
+                            : todayLog.offsite_status === 'rejected' ? 'ปฏิเสธ'
+                            : 'รออนุมัติ'}
+                        </span>
+                      </div>
+                      {todayLog.offsite_reason && (
+                        <div className="text-[11px] text-gray-500 mt-1">เหตุผล: {todayLog.offsite_reason}</div>
+                      )}
+                      {todayLog.offsite_status === 'rejected' && todayLog.offsite_reject_reason && (
+                        <div className="text-[11px] text-red-500 mt-1">หมายเหตุ: {todayLog.offsite_reject_reason}</div>
+                      )}
                     </div>
                   )}
                     </div>
@@ -546,9 +612,10 @@ export default function AttendancePage() {
       {showSelfie && (
         <SelfieModal
           onClose={() => setShowSelfie(false)}
-          onSubmit={async (dataUrl) => {
+          onSubmit={async ({ dataUrl, offsite, reason }) => {
             setShowSelfie(false)
-            await doCheckIn(dataUrl)
+            if (offsite) await doCheckInOffsite(dataUrl, reason || '')
+            else         await doCheckIn(dataUrl)
           }}
           busy={acting}
         />
@@ -560,6 +627,7 @@ export default function AttendancePage() {
 /* ===== Daily summary card (HR / Owner) ===== */
 function DailySummaryCard({
   date, onDateChange, data, loading, expanded, onToggle, onRefresh,
+  offsitePending, onApproveOffsite, onRejectOffsite,
 }: {
   date: string
   onDateChange: (d: string) => void
@@ -568,9 +636,15 @@ function DailySummaryCard({
   expanded: boolean
   onToggle: () => void
   onRefresh: () => void
+  offsitePending: any[]
+  onApproveOffsite: (id: string) => void
+  onRejectOffsite: (id: string, reason: string) => void
 }) {
   const summary = data?.summary
   const records = data?.records || []
+  // Inline reject flow: which row is being rejected, and the reason text.
+  const [rejectingId, setRejectingId] = useState<string | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
 
   const groups = useMemo(() => {
     const g: Record<string, any[]> = { present: [], late: [], absent: [], leave: [], other: [] }
@@ -625,6 +699,87 @@ function DailySummaryCard({
           <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
             <div className="h-full bg-[#1D9E75] rounded-full transition-all"
               style={{ width: `${Math.min(100, summary.attendanceRate || 0)}%` }} />
+          </div>
+        </div>
+      )}
+
+      {/* Off-site approval queue. Only renders when there's something to
+          act on so the card stays compact on a normal day. */}
+      {offsitePending.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-black/[0.05]">
+          <h3 className="text-xs font-semibold text-[#111110] mb-2 flex items-center gap-2">
+            <IconMapPin size={12} className="text-[#BA7517]" />
+            ลงเวลานอกสถานที่รออนุมัติ
+            <span className="text-[10px] font-normal text-gray-400">({offsitePending.length})</span>
+          </h3>
+          <div className="space-y-2">
+            {offsitePending.map((r: any) => (
+              <div key={r.id} className="rounded-[10px] border border-amber-200 bg-amber-50/30 p-2.5">
+                <div className="flex items-start gap-2.5">
+                  {r.check_in_selfie && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={r.check_in_selfie} alt="selfie"
+                      className="w-12 h-12 rounded-[8px] object-cover border border-black/[0.05] flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[13px] font-medium text-[#111110]">{r.first_name} {r.last_name}</span>
+                      {r.nickname && <span className="text-[11px] text-gray-400">({r.nickname})</span>}
+                      <span className="text-[11px] tabular-nums text-gray-500">
+                        · {dayjs(r.check_in_at).format('HH:mm')}
+                      </span>
+                      {r.check_in_distance_m != null && (
+                        <span className="text-[11px] text-gray-400">
+                          · ห่าง {(r.check_in_distance_m / 1000).toFixed(1)} กม.
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[12px] text-gray-700 mt-1 break-words">{r.offsite_reason}</div>
+                  </div>
+                  <div className="flex flex-col gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => onApproveOffsite(r.id)}
+                      className="btn btn-primary text-[11px] px-2 py-1"
+                      title="อนุมัติ"
+                    >
+                      <IconCheck size={12} /> อนุมัติ
+                    </button>
+                    <button
+                      onClick={() => { setRejectingId(r.id); setRejectReason('') }}
+                      className="btn text-[11px] px-2 py-1 text-red-600 border-red-200 hover:bg-red-50"
+                      title="ปฏิเสธ"
+                    >
+                      <IconX size={12} /> ปฏิเสธ
+                    </button>
+                  </div>
+                </div>
+                {rejectingId === r.id && (
+                  <div className="mt-2 p-2 rounded-[8px] bg-red-50/60 border border-red-100">
+                    <textarea
+                      className="input text-[11px] min-h-[40px]"
+                      placeholder="เหตุผลที่ปฏิเสธ (ไม่บังคับ)"
+                      value={rejectReason}
+                      onChange={e => setRejectReason(e.target.value)}
+                      autoFocus
+                    />
+                    <div className="flex gap-1.5 mt-1.5">
+                      <button
+                        onClick={() => { onRejectOffsite(r.id, rejectReason); setRejectingId(null) }}
+                        className="btn text-[11px] text-red-600 border-red-200 hover:bg-red-50"
+                      >
+                        ยืนยันปฏิเสธ
+                      </button>
+                      <button
+                        onClick={() => { setRejectingId(null); setRejectReason('') }}
+                        className="btn text-[11px]"
+                      >
+                        ยกเลิก
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -702,7 +857,7 @@ function SelfieModal({
   onClose, onSubmit, busy,
 }: {
   onClose: () => void
-  onSubmit: (dataUrl: string) => void
+  onSubmit: (data: { dataUrl: string; offsite: boolean; reason?: string }) => void
   busy: boolean
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -710,6 +865,11 @@ function SelfieModal({
   const [phase, setPhase] = useState<'starting' | 'live' | 'preview' | 'error'>('starting')
   const [errorMsg, setErrorMsg] = useState('')
   const [snapshot, setSnapshot] = useState<string | null>(null)
+  // Off-site toggle + reason. When the checkbox is on, the submit button
+  // changes to "ส่งคำขอ" and the API gets called with offsite=true. The
+  // reason field is only required in that mode.
+  const [offsite, setOffsite] = useState(false)
+  const [reason, setReason] = useState('')
 
   const stopStream = () => {
     if (streamRef.current) {
@@ -823,18 +983,55 @@ function SelfieModal({
             </button>
           )}
           {phase === 'preview' && (
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={retake} disabled={busy} className="btn justify-center py-3">
-                <IconRefresh size={15} /> ถ่ายใหม่
-              </button>
-              <button
-                onClick={() => snapshot && onSubmit(snapshot)}
-                disabled={busy}
-                className="btn btn-primary justify-center py-3 disabled:opacity-50"
-              >
-                <IconCheck size={16} /> {busy ? 'กำลังส่ง…' : 'เช็คอิน'}
-              </button>
-            </div>
+            <>
+              {/* Off-site toggle. If the employee is working outside the
+                  office, they tick this; the submit changes to "ส่งคำขอ"
+                  and HR/owner has to approve before it counts. The reason
+                  field appears inline so they don't lose the snapshot. */}
+              <label className="flex items-start gap-2 mb-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={offsite}
+                  onChange={e => setOffsite(e.target.checked)}
+                />
+                <span className="text-[12px] text-gray-700 leading-snug">
+                  ลงเวลานอกสถานที่ (ทำงานนอกออฟฟิศ)
+                  <span className="block text-[11px] text-gray-400">
+                    ต้องระบุเหตุผลและรอ HR/เจ้าของอนุมัติ
+                  </span>
+                </span>
+              </label>
+              {offsite && (
+                <div className="mb-3">
+                  <label className="label">เหตุผล *</label>
+                  <textarea
+                    className="input min-h-[60px] text-[13px]"
+                    placeholder="เช่น ประชุมลูกค้าที่ไซต์, ลงพื้นที่จังหวัด..."
+                    value={reason}
+                    onChange={e => setReason(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={retake} disabled={busy} className="btn justify-center py-3">
+                  <IconRefresh size={15} /> ถ่ายใหม่
+                </button>
+                <button
+                  onClick={() => snapshot && onSubmit({
+                    dataUrl: snapshot,
+                    offsite,
+                    reason: offsite ? reason.trim() : undefined,
+                  })}
+                  disabled={busy || (offsite && !reason.trim())}
+                  className="btn btn-primary justify-center py-3 disabled:opacity-50"
+                >
+                  <IconCheck size={16} /> {busy ? 'กำลังส่ง…' : (offsite ? 'ส่งคำขอ' : 'เช็คอิน')}
+                </button>
+              </div>
+            </>
           )}
           {phase === 'error' && (
             <button onClick={startCamera} className="btn w-full justify-center py-3">
