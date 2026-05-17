@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600&family=IBM+Plex+Sans+Thai:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600&family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -20,14 +20,25 @@
   --brand-dark: #0F6E56;
   --accent: #534AB7;
   --accent-light: #EEEDFE;
+  --line: #06C755;
 
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 20px;
 
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  /* Elevation tiers — sm for resting cards, md for hover/focused,
+     lg for floating panels (modals, popovers). Each tier combines a
+     soft outer shadow + a tighter inner one so edges stay crisp on
+     dark backgrounds too. */
+  --shadow-sm: 0 1px 3px rgba(17,17,16,0.04), 0 1px 2px rgba(17,17,16,0.03);
+  --shadow-md: 0 4px 16px rgba(17,17,16,0.06), 0 2px 6px rgba(17,17,16,0.04);
+  --shadow-lg: 0 12px 32px rgba(17,17,16,0.08), 0 4px 12px rgba(17,17,16,0.05);
+  --shadow-brand: 0 4px 14px rgba(29,158,117,0.18);
+
+  /* Standard easing curves. ease-out for entering content (fast then
+     settle), ease for hover where you want symmetry. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -39,32 +50,89 @@ body {
   font-size: 14px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 /* Scrollbar */
-::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
 
 /* Focus ring */
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* Selection — branded */
+::selection { background: rgba(29,158,117,0.18); color: var(--color-text-primary); }
+
+/* Skip print-only flourishes on iOS where they trigger jank */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
 
 @layer components {
   .card {
     @apply bg-white rounded-[14px] border border-black/[0.06] p-4;
     box-shadow: var(--shadow-sm);
+    transition: box-shadow 200ms var(--ease-out), border-color 200ms var(--ease-out), transform 200ms var(--ease-out);
   }
+  /* Apply to a .card when the whole thing is clickable (Link wrapper,
+     button, etc.) — gives a subtle lift on hover so it reads as
+     interactive without being noisy. */
+  .card-interactive {
+    @apply cursor-pointer;
+  }
+  .card-interactive:hover {
+    box-shadow: var(--shadow-md);
+    border-color: rgba(0,0,0,0.1);
+    transform: translateY(-1px);
+  }
+
   .btn {
-    @apply inline-flex items-center gap-2 px-4 py-2 rounded-[10px] text-sm font-medium
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[10px] text-sm font-medium
            border border-black/[0.08] bg-white text-gray-700
-           hover:bg-gray-50 active:scale-[0.98] transition-all duration-150 cursor-pointer;
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100
+           cursor-pointer select-none;
+    /* Touch targets >= 40px for mobile — LIFF users tap with thumbs */
+    min-height: 38px;
+    transition: background-color 150ms var(--ease-out), border-color 150ms var(--ease-out),
+                box-shadow 150ms var(--ease-out), transform 100ms var(--ease-out);
   }
+  .btn:hover:not(:disabled) { @apply bg-gray-50 border-black/[0.14]; }
+  .btn:active:not(:disabled) { transform: scale(0.97); }
+
   .btn-primary {
-    @apply bg-[#1D9E75] text-white border-[#1D9E75] hover:bg-[#0F6E56];
+    @apply text-white border-transparent;
+    background: var(--brand);
+    box-shadow: var(--shadow-brand);
   }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--brand-dark);
+    border-color: transparent;
+    box-shadow: 0 6px 18px rgba(29,158,117,0.28);
+  }
+
   .btn-ghost {
-    @apply border-transparent bg-transparent hover:bg-black/[0.04];
+    @apply border-transparent bg-transparent;
+    box-shadow: none;
   }
+  .btn-ghost:hover:not(:disabled) { @apply bg-black/[0.04] border-transparent; }
+
+  /* LINE-branded action (share, link account, etc.) */
+  .btn-line {
+    @apply text-white border-transparent;
+    background: var(--line);
+    box-shadow: 0 4px 14px rgba(6,199,85,0.22);
+  }
+  .btn-line:hover:not(:disabled) {
+    background: #05B14C;
+    border-color: transparent;
+  }
+
   .badge {
     @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-[5px] text-[11px] font-medium;
   }
@@ -74,10 +142,60 @@ body {
   .badge-purple { @apply bg-[#EEEDFE] text-[#3C3489]; }
   .badge-blue   { @apply bg-[#E6F1FB] text-[#0C447C]; }
   .badge-gray   { @apply bg-gray-100 text-gray-600; }
+
   .input {
     @apply w-full px-3 py-2.5 rounded-[10px] border border-black/[0.1] bg-white text-sm
-           placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1D9E75]/30
-           focus:border-[#1D9E75] transition-all;
+           placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1D9E75]/25
+           focus:border-[#1D9E75];
+    min-height: 40px;
+    transition: border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
   }
+  .input:hover:not(:focus):not(:disabled) { @apply border-black/[0.16]; }
+
   .label { @apply block text-xs text-gray-500 mb-1.5 font-medium; }
+
+  /* Skeleton loader — drop in for any "loading" placeholder. Set
+     width/height via Tailwind classes; this gives the shimmer. */
+  .skeleton {
+    @apply rounded-md;
+    background: linear-gradient(90deg, rgba(0,0,0,0.04) 0%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 100%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  }
+
+  /* Soft section divider used between settings cards / list rows */
+  .divider-soft { @apply border-t border-black/[0.05]; }
+
+  /* Modal shell — used by ModalShell etc. Higher elevation so it
+     reads as floating above the page. */
+  .modal-panel {
+    @apply bg-white rounded-[14px];
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+@layer utilities {
+  /* Entrance animations — apply to elements that mount async (e.g.
+     after data loads) so the appearance feels intentional rather
+     than abrupt. Animation runs once on mount. */
+  .animate-fade-in { animation: fade-in 240ms var(--ease-out) both; }
+  .animate-slide-up { animation: slide-up 260ms var(--ease-out) both; }
+  .animate-scale-in { animation: scale-in 200ms var(--ease-out) both; }
+}
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
 }
