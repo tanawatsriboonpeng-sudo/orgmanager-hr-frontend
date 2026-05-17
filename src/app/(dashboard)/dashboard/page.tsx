@@ -2,7 +2,6 @@
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/lib/store'
 import { attendanceApi, leaveApi, announcementApi, eventApi, type CalendarEvent } from '@/lib/api'
-import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell
 } from 'recharts'
@@ -381,6 +380,7 @@ export default function DashboardPage() {
             roster={summary.roster || []}
             records={summary.records || []}
             holiday={summary.holiday}
+            shifts={summary.shifts || []}
           />
 
           {/* Attendance rate — kept as a slim progress bar at the
@@ -735,16 +735,32 @@ interface RosterPerson {
   emp_code?: string | null
   position?: string | null
   department_name?: string | null
+  user_role?: 'owner' | 'hr' | 'employee' | string | null
+  shift_type?: string | null
+  weekly_shifts?: Record<string, string> | null
   is_day_off?: boolean
   is_holiday?: boolean
   holiday_name?: string | null
 }
+interface ShiftConfig {
+  code: string | null
+  shift_type: string
+  work_start: string | null   // 'HH:MM:SS'
+  work_end: string | null
+}
+
+// Roster + records → grouped + sorted display. The visual order matters
+// for at-a-glance triage: people who showed up live at the top (good),
+// people on planned absence in the middle (expected), people HR needs
+// to chase at the bottom (red). Each group has a one-line header with
+// a count so the eye can scan the gist before diving into names.
 function PersonStatusList({
-  roster, records, holiday,
+  roster, records, holiday, shifts,
 }: {
   roster: RosterPerson[]
   records: any[]
   holiday: { name: string } | null
+  shifts: ShiftConfig[]
 }) {
   if (roster.length === 0) {
     return (
@@ -753,42 +769,237 @@ function PersonStatusList({
       </p>
     )
   }
-  // Index records by employee_id for O(1) lookup in the row map.
   const recById = new Map<string, any>()
   for (const r of records) recById.set(r.employee_id, r)
 
+  // Compute the status once per person — used both for sorting/grouping
+  // and for rendering. Each annotated person carries:
+  //   _status: derived bucket (PersonStatusKind)
+  //   _shiftStart: 'HH:MM' for "กะเริ่ม" hint (only relevant for
+  //                not_checked_in / late so we hide it elsewhere)
+  const dowKey = String(new Date().getDay())
+  const annotated = roster.map(p => {
+    const rec = recById.get(p.id)
+    const status = personStatus(p, rec)
+    const shiftStart = resolveShiftStart(p, shifts, dowKey)
+    return { p, rec, status, shiftStart }
+  })
+
+  // Visual priority — present at top (positive signal), then planned
+  // absences (expected), pending review, day-off/holiday muted, and
+  // ยังไม่เข้า last so it draws the eye to the action-needed group.
+  const GROUP_ORDER: Array<{ kind: PersonStatusKind | 'present_combo'; label: string; tone: 'green' | 'amber' | 'red' | 'gray' | 'violet' }> = [
+    { kind: 'present_combo',  label: 'เข้าแล้ว',   tone: 'green' },
+    { kind: 'late',            label: 'มาสาย',     tone: 'amber' },
+    { kind: 'offsite_pending', label: 'นอกสถานที่ (รออนุมัติ)', tone: 'amber' },
+    { kind: 'leave',           label: 'ลา',         tone: 'violet' },
+    { kind: 'absent',          label: 'ขาด',         tone: 'red' },
+    { kind: 'not_checked_in',  label: 'ยังไม่เข้า',  tone: 'red' },
+    { kind: 'day_off',         label: 'วันหยุดของพนักงาน', tone: 'gray' },
+    { kind: 'holiday',         label: 'วันหยุด',     tone: 'gray' },
+  ]
+  const grouped = GROUP_ORDER.map(g => ({
+    ...g,
+    rows: annotated.filter(a => {
+      if (g.kind === 'present_combo') return a.status.kind === 'on_time' || a.status.kind === 'almost_late'
+      return a.status.kind === g.kind
+    }),
+  })).filter(g => g.rows.length > 0)
+
+  // Within a group, sort by check-in time ascending (earliest first)
+  // — feels natural and means the always-on-time people stay at the
+  // very top of the present group.
+  for (const g of grouped) {
+    g.rows.sort((a, b) => {
+      const ta = a.rec?.check_in_at ? new Date(a.rec.check_in_at).getTime() : 0
+      const tb = b.rec?.check_in_at ? new Date(b.rec.check_in_at).getTime() : 0
+      if (ta !== tb) return ta - tb
+      return (a.p.first_name || '').localeCompare(b.p.first_name || '', 'th')
+    })
+  }
+
   return (
-    <div className="divide-y divide-black/[0.04] -mx-1">
-      {roster.map(p => {
-        const rec = recById.get(p.id)
-        const status = personStatus(p, rec)
-        return (
-          <div key={p.id} className="flex items-center gap-3 py-2 px-1 hover:bg-white/40 rounded transition-colors">
-            <EmployeeAvatar person={p as any} size={32} />
-            <div className="flex-1 min-w-0">
-              <Link href={`/employees/${p.id}`} className="text-sm font-medium text-[#111110] truncate hover:underline">
-                {p.first_name} {p.last_name}
-                {p.nickname && <span className="text-gray-400 font-normal ml-1">({p.nickname})</span>}
-              </Link>
-              {p.position && (
-                <div className="text-[11px] text-gray-400 truncate">{p.position}</div>
-              )}
-            </div>
-            <PersonStatusBadge status={status} />
-            {status.kind === 'not_checked_in' && (
-              <Link
-                href="/attendance"
-                className="text-[11px] text-[#1D9E75] hover:underline whitespace-nowrap"
-                title="เปิดหน้า /attendance เพื่อบันทึกเวลาให้พนักงานคนนี้"
-              >
-                บันทึก →
-              </Link>
-            )}
+    <div className="space-y-3">
+      {grouped.map(g => (
+        <div key={g.kind as string}>
+          <GroupHeader label={g.label} count={g.rows.length} tone={g.tone} />
+          <div className="divide-y divide-black/[0.04]">
+            {g.rows.map(({ p, rec, status, shiftStart }) => (
+              <PersonRow
+                key={p.id}
+                person={p}
+                rec={rec}
+                status={status}
+                shiftStart={shiftStart}
+              />
+            ))}
           </div>
-        )
-      })}
+        </div>
+      ))}
     </div>
   )
+}
+
+// One row in the per-person table. Pulls out into its own component
+// so we can keep the parent map clean.
+function PersonRow({ person: p, rec, status, shiftStart }: {
+  person: RosterPerson
+  rec: any
+  status: PersonStatus
+  shiftStart: string | null
+}) {
+  return (
+    <div className="flex items-center gap-3 py-2.5 px-1 hover:bg-white/40 rounded transition-colors">
+      <RoleAvatar person={p} />
+      <div className="flex-1 min-w-0">
+        <Link href={`/employees/${p.id}`} className="text-sm font-medium text-[#111110] truncate hover:underline">
+          {p.first_name} {p.last_name}
+          {p.nickname && <span className="text-gray-400 font-normal ml-1">({p.nickname})</span>}
+        </Link>
+        {/* Sub-text: prefer position, fall back to department, then
+            employee code — pick the most-specific thing we have so
+            the row never feels empty. */}
+        <PersonSubLabel person={p} status={status} shiftStart={shiftStart} rec={rec} />
+      </div>
+      <PersonStatusBadge status={status} />
+      {(status.kind === 'not_checked_in' || status.kind === 'absent') && (
+        <Link
+          href="/attendance"
+          className="text-[11px] text-[#1D9E75] hover:underline whitespace-nowrap"
+          title="เปิดหน้า /attendance เพื่อบันทึกเวลาให้พนักงานคนนี้"
+        >
+          บันทึก →
+        </Link>
+      )}
+    </div>
+  )
+}
+
+// Two-line sub-label under the name. Top line = position/dept/code.
+// Bottom line = situational hint that changes by status:
+//   - checked-in: "เข้า 08:45 · 23 นาทีที่แล้ว"
+//   - late: "เข้า 09:20 · กะเริ่ม 09:00 (สาย 20 นาที)"
+//   - not_checked_in: "กะเริ่ม 09:00"
+//   - leave/day_off/holiday: nothing (label already tells you)
+function PersonSubLabel({ person: p, status, shiftStart, rec }: {
+  person: RosterPerson
+  status: PersonStatus
+  shiftStart: string | null
+  rec: any
+}) {
+  const primary = p.position || p.department_name || p.emp_code || ''
+  let hint: string | null = null
+  if (rec?.check_in_at && (status.kind === 'on_time' || status.kind === 'almost_late' || status.kind === 'late' || status.kind === 'offsite_pending')) {
+    const t = dayjs(rec.check_in_at)
+    const ago = relativeAgoShort(t)
+    const time = t.format('HH:mm')
+    if (status.kind === 'late' && shiftStart) {
+      const lateMin = minutesBetween(shiftStart, time)
+      hint = `เข้า ${time} · กะเริ่ม ${shiftStart}${lateMin > 0 ? ` (สาย ${lateMin} นาที)` : ''}`
+    } else {
+      hint = `เข้า ${time} · ${ago}`
+    }
+  } else if (status.kind === 'not_checked_in' && shiftStart) {
+    hint = `กะเริ่ม ${shiftStart}`
+  }
+  if (!primary && !hint) return null
+  return (
+    <div className="text-[11px] text-gray-400 truncate">
+      {primary}
+      {primary && hint && <span className="mx-1">·</span>}
+      {hint && <span className={status.kind === 'late' ? 'text-amber-700' : ''}>{hint}</span>}
+    </div>
+  )
+}
+
+// Role-colored avatar that falls back to a single initial when there's
+// no avatar_url. Matches the role colors used in the login page chips
+// (owner=violet, hr=green, employee=blue) so the same person looks
+// the same everywhere.
+function RoleAvatar({ person }: { person: RosterPerson }) {
+  if (person.avatar_url) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={person.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
+  }
+  const ROLE_BG: Record<string, string> = {
+    owner: '#534AB7',
+    hr: '#1D9E75',
+    employee: '#185FA5',
+  }
+  const bg = ROLE_BG[person.user_role || 'employee'] || ROLE_BG.employee
+  const initial = (person.nickname || person.first_name || '?').charAt(0)
+  return (
+    <div
+      className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0"
+      style={{ background: bg }}
+    >
+      {initial}
+    </div>
+  )
+}
+
+// Group header — pill-style count next to a label. Tone follows the
+// group's status so the eye picks up the section at a glance.
+function GroupHeader({ label, count, tone }: {
+  label: string
+  count: number
+  tone: 'green' | 'amber' | 'red' | 'gray' | 'violet'
+}) {
+  const TONE = {
+    green:  'bg-emerald-100 text-emerald-700',
+    amber:  'bg-amber-100 text-amber-700',
+    red:    'bg-red-100 text-red-700',
+    gray:   'bg-gray-100 text-gray-600',
+    violet: 'bg-violet-100 text-violet-700',
+  } as const
+  return (
+    <div className="flex items-center gap-2 px-1 py-1">
+      <span className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">{label}</span>
+      <span className={clsx('text-[10px] font-semibold px-1.5 rounded-full', TONE[tone])}>{count}</span>
+    </div>
+  )
+}
+
+// Resolve an employee's shift start time for today's day-of-week.
+// Priority:
+//   1. weekly_shifts[dow] → look up by code in shifts list
+//   2. fallback to first config of employee.shift_type
+//   3. fallback to first config of 'normal'
+//   4. give up → null (UI hides the hint)
+function resolveShiftStart(p: RosterPerson, shifts: ShiftConfig[], dowKey: string): string | null {
+  const fmt = (s: string | null | undefined) => s ? String(s).slice(0, 5) : null
+  const code = p.weekly_shifts?.[dowKey]
+  if (code && code !== 'dayoff') {
+    const m = shifts.find(s => s.code === code)
+    if (m?.work_start) return fmt(m.work_start)
+  }
+  if (p.shift_type) {
+    const m = shifts.find(s => s.shift_type === p.shift_type)
+    if (m?.work_start) return fmt(m.work_start)
+  }
+  const fallback = shifts.find(s => s.shift_type === 'normal')
+  return fmt(fallback?.work_start) || null
+}
+
+// Convert "08:45" + "09:00" → 15 (positive minutes late). Negative
+// values clamp to 0 (early arrival isn't "late").
+function minutesBetween(start: string, actual: string): number {
+  const [sh, sm] = start.split(':').map(n => parseInt(n, 10) || 0)
+  const [ah, am] = actual.split(':').map(n => parseInt(n, 10) || 0)
+  return Math.max(0, (ah * 60 + am) - (sh * 60 + sm))
+}
+
+// "23 นาทีที่แล้ว" / "1 ชม. ที่แล้ว" — compact relative time. Anything
+// older than 8 hours falls back to just the time so we don't show
+// "เมื่อวาน" for an old row.
+function relativeAgoShort(t: dayjs.Dayjs): string {
+  const now = dayjs()
+  const minutes = now.diff(t, 'minute')
+  if (minutes < 1) return 'เมื่อสักครู่'
+  if (minutes < 60) return `${minutes} นาทีที่แล้ว`
+  const hours = now.diff(t, 'hour')
+  if (hours < 8) return `${hours} ชม. ที่แล้ว`
+  return t.format('HH:mm')
 }
 
 type PersonStatusKind =
@@ -812,7 +1023,7 @@ function personStatus(p: RosterPerson, rec: any): PersonStatus {
   if (rec) {
     const time = rec.check_in_at ? dayjs(rec.check_in_at).format('HH:mm') : undefined
     if (rec.is_offsite && rec.offsite_status === 'pending') {
-      return { kind: 'offsite_pending', label: 'รออนุมัติ (นอกสถานที่)', time }
+      return { kind: 'offsite_pending', label: 'รออนุมัติ', time }
     }
     if (rec.status === 'leave') return { kind: 'leave', label: 'ลา' }
     if (rec.status === 'absent') return { kind: 'absent', label: 'ขาด' }
