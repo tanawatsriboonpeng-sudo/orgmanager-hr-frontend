@@ -538,7 +538,10 @@ export interface Holiday {
   id: string
   name: string
   date: string         // YYYY-MM-DD
-  type: 'national' | 'religious' | 'company' | string
+  // Schema CHECK constraint allows national/company/compensatory only.
+  // 'religious' was an old value that never matched — keep string in
+  // the union so a legacy row with bad type doesn't fail typecheck.
+  type: 'national' | 'company' | 'compensatory' | string
   year: number
   created_by?: string | null
   created_at?: string
