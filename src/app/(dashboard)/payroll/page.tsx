@@ -4,11 +4,12 @@ import { payrollApi, employeeApi, type PayrollRecord, type PayrollStatus } from 
 import { useAuthStore } from '@/lib/store'
 import {
   IconPlus, IconCheck, IconCash, IconTrash, IconReceipt2,
-  IconPrinter, IconFileInvoice, IconX, IconWand,
+  IconPrinter, IconFileInvoice, IconX, IconWand, IconBrandLine,
 } from '@tabler/icons-react'
 import dayjs from 'dayjs'
 import clsx from 'clsx'
 import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
+import { isLiffConfigured, initLiff, shareViaLine } from '@/lib/liff'
 
 const MONTHS_TH = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -514,6 +515,51 @@ function SlipDetailModal({
   const isDraft = record.status === 'draft'
   const isApproved = record.status === 'approved'
 
+  // LIFF share — the button only renders when NEXT_PUBLIC_LIFF_ID is
+  // set AND the SDK was able to init. Outside LIFF, shareViaLine still
+  // works (opens LINE in a browser flow) so we keep the button visible
+  // as long as the SDK initialized at all.
+  const [liffReady, setLiffReady] = useState(false)
+  const [sharing, setSharing] = useState(false)
+  useEffect(() => {
+    if (!isLiffConfigured()) return
+    initLiff().then(({ ready }) => setLiffReady(ready))
+  }, [])
+
+  const handleShareLine = async () => {
+    setSharing(true)
+    try {
+      // Plain-text payslip — formatted so it reads cleanly inside a
+      // LINE chat bubble. We intentionally only include the high-level
+      // numbers (no employee ID, no tax-id), so it's safe even if the
+      // recipient is a spouse / accountant.
+      const lines: string[] = []
+      lines.push(`🧾 สลิปเงินเดือน`)
+      lines.push(`${record.first_name || ''} ${record.last_name || ''}`.trim())
+      lines.push(`${MONTHS_TH[record.month - 1]} ${record.year + 543}`)
+      lines.push('')
+      lines.push(`เงินเดือน: ${'฿' + fmtMoney(record.base_salary)}`)
+      if (toNum(record.ot_amount) > 0)   lines.push(`OT: ${'฿' + fmtMoney(record.ot_amount)}`)
+      if (toNum(record.bonus) > 0)       lines.push(`โบนัส: ${'฿' + fmtMoney(record.bonus)}`)
+      if (toNum(record.allowances) > 0)  lines.push(`สวัสดิการ: ${'฿' + fmtMoney(record.allowances)}`)
+      if (toNum(record.social_security) > 0) lines.push(`หักประกันสังคม: -${'฿' + fmtMoney(record.social_security)}`)
+      if (toNum(record.income_tax) > 0)      lines.push(`หักภาษี: -${'฿' + fmtMoney(record.income_tax)}`)
+      if (toNum(record.other_deductions) > 0) lines.push(`หักอื่นๆ: -${'฿' + fmtMoney(record.other_deductions)}`)
+      lines.push('')
+      lines.push(`รับสุทธิ: ${'฿' + fmtMoney(record.net_salary)}`)
+      const res = await shareViaLine(lines.join('\n'))
+      if (res.ok) {
+        onError('')  // clear any previous error
+      } else if (res.code === 'unavailable') {
+        onError('แชร์ผ่าน LINE ไม่ได้ในเบราว์เซอร์นี้ — เปิดผ่าน LINE OA แทน')
+      } else if (res.code === 'cancelled') {
+        // user dismissed — silent
+      } else {
+        onError('แชร์ไม่สำเร็จ')
+      }
+    } finally { setSharing(false) }
+  }
+
   return (
     <ModalShell onClose={onClose} title="" wide>
       {/* Header */}
@@ -556,9 +602,16 @@ function SlipDetailModal({
       {/* Footer actions */}
       <div className="flex flex-wrap gap-2 justify-end pt-4 border-t border-black/[0.06] mt-2">
         {!canManage ? (
-          <button onClick={() => window.print()} className="btn text-sm">
-            <IconPrinter size={14} /> พิมพ์
-          </button>
+          <>
+            {liffReady && isPaid && (
+              <button onClick={handleShareLine} disabled={sharing} className="btn text-sm" style={{ borderColor: '#06C755', color: '#06C755' }}>
+                <IconBrandLine size={14} /> {sharing ? 'กำลังเปิด…' : 'แชร์ผ่าน LINE'}
+              </button>
+            )}
+            <button onClick={() => window.print()} className="btn text-sm">
+              <IconPrinter size={14} /> พิมพ์
+            </button>
+          </>
         ) : editing ? (
           <>
             <button onClick={() => setEditing(false)} className="btn text-sm">ยกเลิก</button>
@@ -575,6 +628,11 @@ function SlipDetailModal({
                 className="btn text-sm text-red-500 border-red-200 hover:bg-red-50"
               >
                 <IconTrash size={14} /> ลบ
+              </button>
+            )}
+            {liffReady && isPaid && (
+              <button onClick={handleShareLine} disabled={sharing} className="btn text-sm" style={{ borderColor: '#06C755', color: '#06C755' }}>
+                <IconBrandLine size={14} /> {sharing ? 'กำลังเปิด…' : 'แชร์ผ่าน LINE'}
               </button>
             )}
             <button onClick={() => window.print()} className="btn text-sm">

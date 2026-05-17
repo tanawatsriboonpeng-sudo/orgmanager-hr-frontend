@@ -79,3 +79,39 @@ export async function getLineProfile() {
 export function closeLiffWindow(): void {
   if (liffInstance && liffInstance.isInClient()) liffInstance.closeWindow()
 }
+
+// Opens LINE's native "send to…" sheet so the user can pick a friend
+// or group to share `text` with. Works both inside LIFF (LINE app) and
+// in a regular browser (LINE will prompt the user to log in first).
+//
+// Returns:
+//   { ok: true }                   — message sent
+//   { ok: false, code:'cancelled' } — user dismissed the picker
+//   { ok: false, code:'unavailable' } — LIFF not ready / share permission denied
+//   { ok: false, code:'error', error } — anything else
+//
+// We don't throw; the call site renders an inline toast instead.
+export async function shareViaLine(text: string): Promise<
+  | { ok: true }
+  | { ok: false; code: 'cancelled' | 'unavailable' | 'error'; error?: string }
+> {
+  if (!liffInstance) return { ok: false, code: 'unavailable' }
+  if (!liffInstance.isApiAvailable('shareTargetPicker')) {
+    return { ok: false, code: 'unavailable' }
+  }
+  try {
+    const res = await liffInstance.shareTargetPicker(
+      [{ type: 'text', text }],
+      // isMultiple controls the "you can pick multiple recipients" UI;
+      // most users sharing a payslip pick a single person/group so the
+      // multi-picker would be noisy. Default false.
+      { isMultiple: false }
+    )
+    // shareTargetPicker resolves to null if the user dismissed without
+    // selecting; resolves to { status: 'success' } on send.
+    if (res?.status === 'success') return { ok: true }
+    return { ok: false, code: 'cancelled' }
+  } catch (err: any) {
+    return { ok: false, code: 'error', error: err?.message }
+  }
+}
