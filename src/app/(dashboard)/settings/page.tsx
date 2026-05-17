@@ -25,6 +25,7 @@ import {
   IconBeach, IconFileText,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
+import { useToast } from '@/components/ui/Toast'
 
 const ROLE_LABELS: Record<string, string> = {
   owner: 'เจ้าของกิจการ',
@@ -525,8 +526,13 @@ function OfficeLocationsCard() {
     return () => clearTimeout(t)
   }, [msg])
 
+  const toast = useToast()
   const remove = async (loc: OfficeLocation) => {
-    if (!confirm(`ลบ "${loc.name}"? พนักงานจะลงเวลาจากจุดนี้ไม่ได้ทันที`)) return
+    const ok = await toast.confirm(
+      `พนักงานจะลงเวลาจากจุดนี้ไม่ได้ทันที`,
+      { title: `ลบ "${loc.name}"?`, tone: 'danger', confirmText: 'ลบ' }
+    )
+    if (!ok) return
     try {
       await officeLocationApi.delete(loc.id)
       setMsg({ text: 'ลบแล้ว', ok: true })
@@ -844,8 +850,13 @@ function LineLinkCard({ linked, onChanged }: { linked: boolean; onChanged: () =>
     } finally { setBusy(false) }
   }
 
+  const toast = useToast()
   const handleUnlink = async () => {
-    if (!confirm('ยกเลิกการผูกบัญชี LINE? หลังจากนี้จะเข้าสู่ระบบผ่าน LINE OA ไม่ได้จนกว่าจะผูกใหม่')) return
+    const ok = await toast.confirm(
+      'หลังจากนี้จะเข้าสู่ระบบผ่าน LINE OA ไม่ได้จนกว่าจะผูกใหม่',
+      { title: 'ยกเลิกการผูกบัญชี LINE?', tone: 'danger', confirmText: 'ยกเลิกการผูก' }
+    )
+    if (!ok) return
     setBusy(true); setMsg(null)
     try {
       await lineAuthApi.unlink()
@@ -916,6 +927,7 @@ function LineLinkCard({ linked, onChanged }: { linked: boolean; onChanged: () =>
 // being a no-op the owner clicks repeatedly.
 
 function DataRetentionCard() {
+  const toast = useToast()
   const [policy, setPolicy] = useState<RetentionPolicy | null>(null)
   const [form, setForm] = useState({
     selfieDays: 180,
@@ -966,7 +978,11 @@ function DataRetentionCard() {
   }
 
   const purgeNow = async () => {
-    if (!confirm('ล้างข้อมูลเก่าทันทีตามนโยบายปัจจุบัน? รูปและไฟล์แนบที่เกินกำหนดจะถูกลบถาวร')) return
+    const ok = await toast.confirm(
+      'รูปและไฟล์แนบที่เกินกำหนดจะถูกลบถาวร — ดำเนินการต่อ?',
+      { title: 'ล้างข้อมูลเก่าทันที', tone: 'danger', confirmText: 'ล้างเลย' }
+    )
+    if (!ok) return
     setPurging(true); setMsg(null)
     try {
       const r = await retentionApi.purgeNow()
@@ -1129,6 +1145,7 @@ function RetentionField({ label, help, value, onChange, min, max, suggested }: {
 const ADVANCE_NOTICE_PRESETS = [0, 1, 3, 7, 14, 30]
 
 function LeaveTypesCard() {
+  const toast = useToast()
   const [rows, setRows] = useState<LeaveType[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<string | 'new' | null>(null)
@@ -1161,7 +1178,11 @@ function LeaveTypesCard() {
   }
 
   const remove = async (lt: LeaveType) => {
-    if (!confirm(`ลบประเภท "${lt.name}"? ถ้ามีคำขอเดิม ระบบจะปิดใช้งานแทน (ข้อมูลเก่ายังอยู่)`)) return
+    const ok = await toast.confirm(
+      'ถ้ามีคำขอเดิม ระบบจะปิดใช้งานแทน (ข้อมูลเก่ายังอยู่)',
+      { title: `ลบประเภท "${lt.name}"?`, tone: 'danger', confirmText: 'ลบ' }
+    )
+    if (!ok) return
     try {
       const r = await leaveApi.deleteType(lt.id)
       setMsg({ text: r.data.message, ok: true })

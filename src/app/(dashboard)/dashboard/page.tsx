@@ -232,7 +232,7 @@ export default function DashboardPage() {
   const unreadCount = announcements.filter(a => !a.is_read).length
 
   return (
-    <div className="p-6 max-w-6xl mx-auto animate-fade-in">
+    <div className="p-6 max-w-6xl mx-auto">
       {/* Hero header — gradient panel with greeting + date + unread chip.
           Replaces the plain text header so the dashboard reads as a
           landing page rather than a sea of cards. The radial accent

@@ -11,6 +11,7 @@ import {
   lineLogin as triggerLineLogin,
   getLineAccessToken,
 } from '@/lib/liff'
+import { ToastProvider } from '@/components/ui/Toast'
 
 const PUBLIC_PATHS = ['/login', '/forgot-password']
 
@@ -99,7 +100,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600&display=swap" rel="stylesheet" />
       </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <ToastProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </ToastProvider>
       </body>
     </html>
   )
