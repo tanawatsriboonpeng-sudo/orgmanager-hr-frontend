@@ -631,4 +631,134 @@ export const kpiApi = {
   deleteReview: (id: string) => api.delete(`/kpi/reviews/${id}`),
 }
 
+// Cleaning roster APIs
+export interface CleaningItem {
+  id: string
+  name: string
+  description: string | null
+  display_order: number
+  is_active: boolean
+  created_at?: string
+}
+export interface CleaningItemUpsert {
+  name?: string
+  description?: string | null
+  displayOrder?: number
+  isActive?: boolean
+}
+export interface CleaningSettings {
+  id?: number
+  // 0=Sun..6=Sat. Empty array = disabled (no scheduled days).
+  weekdays: number[]
+  start_time: string  // "HH:MM:SS"
+  end_time: string
+  is_active: boolean
+  updated_at?: string
+}
+export interface CleaningSettingsUpdate {
+  weekdays?: number[]
+  startTime?: string  // "HH:MM"
+  endTime?: string
+  isActive?: boolean
+}
+export interface CleaningQueueRow {
+  id: string
+  employee_id: string
+  position: number
+  is_active: boolean
+  first_name?: string
+  last_name?: string
+  nickname?: string | null
+  avatar_url?: string | null
+  emp_code?: string
+  employee_active?: boolean
+}
+export interface CleaningQueueResponse {
+  queue: CleaningQueueRow[]
+  nextPosition: number
+}
+export type CleaningSessionStatus =
+  | 'open' | 'inspector_reviewed' | 'approved' | 'rejected'
+export interface CleaningSessionItem {
+  id: string
+  item_id: string | null
+  item_name: string
+  display_order: number
+  done_by_employee_id: string | null
+  inspector_note: string | null
+  done_by_first_name?: string | null
+  done_by_last_name?: string | null
+  done_by_nickname?: string | null
+  done_by_avatar_url?: string | null
+}
+export interface CleaningSession {
+  id: string
+  session_date: string  // YYYY-MM-DD
+  start_time: string
+  end_time: string
+  inspector_id: string | null
+  status: CleaningSessionStatus
+  inspector_notes: string | null
+  inspector_completed_at: string | null
+  approved_by: string | null
+  approved_at: string | null
+  hr_notes: string | null
+  created_at: string
+  // joined
+  inspector_first_name?: string | null
+  inspector_last_name?: string | null
+  inspector_nickname?: string | null
+  inspector_avatar_url?: string | null
+  approver_first_name?: string | null
+  approver_last_name?: string | null
+  items: CleaningSessionItem[]
+}
+export interface CleaningSessionListRow {
+  id: string
+  session_date: string
+  start_time: string
+  end_time: string
+  status: CleaningSessionStatus
+  inspector_id: string | null
+  approved_at: string | null
+  inspector_first_name?: string | null
+  inspector_last_name?: string | null
+  inspector_nickname?: string | null
+  inspector_avatar_url?: string | null
+  item_count: number
+  filled_count: number
+}
+export interface CleaningInspectItem {
+  itemId: string
+  doneByEmployeeId?: string | null
+  note?: string | null
+}
+export const cleaningApi = {
+  // items
+  listItems: (includeInactive = false) =>
+    api.get('/cleaning/items', { params: includeInactive ? { includeInactive: 1 } : {} }),
+  createItem: (data: CleaningItemUpsert) => api.post('/cleaning/items', data),
+  updateItem: (id: string, data: CleaningItemUpsert) => api.patch(`/cleaning/items/${id}`, data),
+  deleteItem: (id: string) => api.delete(`/cleaning/items/${id}`),
+  // settings
+  getSettings: () => api.get('/cleaning/settings'),
+  updateSettings: (data: CleaningSettingsUpdate) => api.patch('/cleaning/settings', data),
+  // queue
+  getQueue: () => api.get('/cleaning/inspector-queue'),
+  saveQueue: (employeeIds: string[]) => api.put('/cleaning/inspector-queue', { employeeIds }),
+  // sessions
+  today: () => api.get('/cleaning/today'),
+  listSessions: (params?: { limit?: number; offset?: number }) =>
+    api.get('/cleaning/sessions', { params }),
+  getSession: (id: string) => api.get(`/cleaning/sessions/${id}`),
+  reassignInspector: (id: string, employeeId: string) =>
+    api.patch(`/cleaning/sessions/${id}/inspector`, { employeeId }),
+  inspect: (id: string, items: CleaningInspectItem[], notes?: string) =>
+    api.post(`/cleaning/sessions/${id}/inspect`, { items, notes }),
+  approve: (id: string, hrNotes?: string) =>
+    api.post(`/cleaning/sessions/${id}/approve`, { hrNotes }),
+  reject: (id: string, hrNotes?: string) =>
+    api.post(`/cleaning/sessions/${id}/reject`, { hrNotes }),
+}
+
 export default api

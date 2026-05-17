@@ -10,14 +10,15 @@ import {
   IconSpeakerphone, IconHierarchy, IconHistory,
   IconBuilding, IconLogout, IconChevronRight,
   IconSettings, IconCrown, IconUsers, IconUser, IconKey,
-  IconMenu2, IconX, IconCalendarTime
+  IconMenu2, IconX, IconCalendarTime, IconSparkles,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
 import NotificationBell from '@/components/notifications/NotificationBell'
 
-// Removed dead links: /finance, /cleaning, /recruit — the pages were
-// deleted earlier but the sidebar still pointed at them, producing 404s.
+// /cleaning is the shared-responsibility cleaning rota — visible to all
+// roles because every employee can be assigned as inspector and everyone
+// needs to see today's list.
 const ROLE_MENUS = {
   owner: [
     // Owner ดูภาพรวม/อนุมัติ/จัดการเท่านั้น ไม่ลงเวลา ไม่ขอ OT ไม่มีกะ
@@ -27,6 +28,7 @@ const ROLE_MENUS = {
     { href: '/payroll', icon: IconReceipt2, label: 'เงินเดือน' },
     { href: '/kpi', icon: IconChartBar, label: 'KPI' },
     { href: '/projects', icon: IconClipboardList, label: 'โปรเจกต์' },
+    { href: '/cleaning', icon: IconSparkles, label: 'ทำความสะอาด' },
     { href: '/announcements', icon: IconSpeakerphone, label: 'ประกาศ' },
     { href: '/employees', icon: IconUsers, label: 'พนักงาน' },
     { href: '/org-chart', icon: IconHierarchy, label: 'แผนผัง' },
@@ -42,6 +44,7 @@ const ROLE_MENUS = {
     { href: '/kpi', icon: IconChartBar, label: 'KPI' },
     { href: '/employees', icon: IconUsers, label: 'พนักงาน' },
     { href: '/projects', icon: IconClipboardList, label: 'โปรเจกต์' },
+    { href: '/cleaning', icon: IconSparkles, label: 'ทำความสะอาด' },
     { href: '/announcements', icon: IconSpeakerphone, label: 'ประกาศ' },
   ],
   employee: [
@@ -51,6 +54,7 @@ const ROLE_MENUS = {
     { href: '/ot', icon: IconClockPlus, label: 'OT' },
     { href: '/payroll', icon: IconReceipt2, label: 'สลิป' },
     { href: '/projects', icon: IconClipboardList, label: 'โปรเจกต์' },
+    { href: '/cleaning', icon: IconSparkles, label: 'ทำความสะอาด' },
     { href: '/announcements', icon: IconSpeakerphone, label: 'ประกาศ' },
   ],
 }
