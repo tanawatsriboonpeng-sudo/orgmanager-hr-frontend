@@ -107,8 +107,11 @@ export default function AttendancePage() {
   const [backdatePending, setBackdatePending] = useState<any[]>([])
   // Employee's own backdate request history (shown to non-HR users).
   const [myBackdates, setMyBackdates] = useState<any[]>([])
-  // Backdate request modal toggle.
+  // Backdate request modal toggle. When opened from the rejected-offsite
+  // CTA on today's log card, backdateInitialDate carries the date so the
+  // form starts with the right day pre-filled.
   const [showBackdate, setShowBackdate] = useState(false)
+  const [backdateInitialDate, setBackdateInitialDate] = useState<string | undefined>(undefined)
 
   // Toast
   const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null)
@@ -465,6 +468,21 @@ export default function AttendancePage() {
                       {todayLog.offsite_status === 'rejected' && todayLog.offsite_reject_reason && (
                         <div className="text-[11px] text-red-500 mt-1">หมายเหตุ: {todayLog.offsite_reject_reason}</div>
                       )}
+                      {/* Rejection isn't necessarily a dead-end — the
+                          employee can submit a backdate request for the
+                          same day with stronger evidence (receipt,
+                          calendar shot, etc.) for HR to review fresh. */}
+                      {todayLog.offsite_status === 'rejected' && (
+                        <button
+                          onClick={() => {
+                            setBackdateInitialDate(dayjs(todayLog.date).format('YYYY-MM-DD'))
+                            setShowBackdate(true)
+                          }}
+                          className="mt-2 text-[11px] text-[#1D9E75] hover:underline inline-flex items-center gap-0.5"
+                        >
+                          ยื่นคำขอย้อนหลังพร้อมหลักฐาน →
+                        </button>
+                      )}
                     </div>
                   )}
                     </div>
@@ -686,9 +704,11 @@ export default function AttendancePage() {
 
       {showBackdate && (
         <BackdateRequestModal
-          onClose={() => setShowBackdate(false)}
+          initialDate={backdateInitialDate}
+          onClose={() => { setShowBackdate(false); setBackdateInitialDate(undefined) }}
           onSubmitted={() => {
             setShowBackdate(false)
+            setBackdateInitialDate(undefined)
             flash('ส่งคำขอลงเวลาย้อนหลังแล้ว')
             loadMyBackdates()
           }}
@@ -1307,14 +1327,18 @@ function SelfieModal({
    POST /attendance/backdate-request; HR/owner approves later from the
    daily-summary card. */
 function BackdateRequestModal({
-  onClose, onSubmitted, onError,
+  onClose, onSubmitted, onError, initialDate,
 }: {
   onClose: () => void
   onSubmitted: () => void
   onError: (m: string) => void
+  // Pre-fill the date field. Used when the modal is opened from the
+  // "ยื่นย้อนหลังพร้อมหลักฐาน" CTA on a rejected off-site row so the
+  // employee doesn't have to retype the date.
+  initialDate?: string
 }) {
   const today = dayjs().format('YYYY-MM-DD')
-  const [date, setDate] = useState(today)
+  const [date, setDate] = useState(initialDate || today)
   const [requestType, setRequestType] = useState<'check_in' | 'check_out' | 'both'>('both')
   const [checkInTime, setCheckInTime] = useState('09:00')
   const [checkOutTime, setCheckOutTime] = useState('17:00')
