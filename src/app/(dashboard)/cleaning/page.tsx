@@ -15,6 +15,7 @@ import {
 import dayjs from 'dayjs'
 import clsx from 'clsx'
 import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
+import { useToast } from '@/components/ui/Toast'
 
 // Mon-first matches Thai work-week and existing /shifts.
 const WEEK_DAYS: { num: number; label: string; short: string }[] = [
@@ -683,6 +684,7 @@ function SettingsTab({ flash }: { flash: (text: string, ok?: boolean) => void })
 }
 
 function ItemsSection({ flash }: { flash: (text: string, ok?: boolean) => void }) {
+  const toast = useToast()
   const [items, setItems] = useState<CleaningItem[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -725,7 +727,11 @@ function ItemsSection({ flash }: { flash: (text: string, ok?: boolean) => void }
   }
 
   const del = async (it: CleaningItem) => {
-    if (!confirm(`ลบ "${it.name}"? ประวัติรอบเก่ายังคงอยู่`)) return
+    const ok = await toast.confirm(
+      'ประวัติรอบเก่ายังคงอยู่',
+      { title: `ลบ "${it.name}"?`, tone: 'danger', confirmText: 'ลบ' }
+    )
+    if (!ok) return
     try {
       await cleaningApi.deleteItem(it.id)
       flash('ลบแล้ว')

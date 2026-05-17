@@ -12,6 +12,7 @@ import {
 import dayjs from 'dayjs'
 import clsx from 'clsx'
 import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
+import { useToast } from '@/components/ui/Toast'
 
 const STATUS_TH: Record<KpiReviewStatus, string> = {
   draft: 'ร่าง', submitted: 'ส่งแล้ว', approved: 'อนุมัติแล้ว',
@@ -233,15 +234,21 @@ function ReviewsTab({
   onError: (m: string) => void
   onInfo: (m: string) => void
 }) {
+  const toast = useToast()
   const now = dayjs()
   const approve = async (r: KpiReview) => {
-    if (!confirm(`อนุมัติการประเมินของ ${r.first_name} ${r.last_name} (Q${r.quarter}/${r.year}) ?`)) return
+    const ok = await toast.confirm(
+      `Q${r.quarter}/${r.year} — ${r.first_name} ${r.last_name}`,
+      { title: 'อนุมัติการประเมินนี้?', confirmText: 'อนุมัติ' }
+    )
+    if (!ok) return
     try {
       await kpiApi.approveReview(r.id); onInfo('อนุมัติแล้ว'); onChanged()
     } catch (e: any) { onError(e.response?.data?.message || 'อนุมัติไม่สำเร็จ') }
   }
   const del = async (r: KpiReview) => {
-    if (!confirm('ลบการประเมินนี้?')) return
+    const ok = await toast.confirm('ลบการประเมินนี้?', { tone: 'danger', confirmText: 'ลบ' })
+    if (!ok) return
     try {
       await kpiApi.deleteReview(r.id); onInfo('ลบแล้ว'); onChanged()
     } catch (e: any) { onError(e.response?.data?.message || 'ลบไม่สำเร็จ') }
@@ -393,8 +400,13 @@ function CriteriaTab({
   onError: (m: string) => void
   onInfo: (m: string) => void
 }) {
+  const toast = useToast()
   const del = async (c: KpiCriterion) => {
-    if (!confirm(`ลบเกณฑ์ "${c.name}" ?`)) return
+    const ok = await toast.confirm(
+      'ถ้ามีการประเมินเดิม ระบบจะปิดใช้งานแทน',
+      { title: `ลบเกณฑ์ "${c.name}"?`, tone: 'danger', confirmText: 'ลบ' }
+    )
+    if (!ok) return
     try {
       const r = await kpiApi.deleteCriterion(c.id)
       onInfo(r.data?.message || 'ลบเกณฑ์แล้ว'); onChanged()

@@ -11,6 +11,8 @@ import {
 import dayjs from 'dayjs'
 import clsx from 'clsx'
 import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
+import { useToast } from '@/components/ui/Toast'
+import EmptyState from '@/components/ui/EmptyState'
 
 // Reduce arbitrary image attachments to ~1024px JPEG so a single phone
 // photo (often 5–8 MB raw) lands under our ~500 KB document cap. PDFs
@@ -77,6 +79,7 @@ function countWorkingDays(startISO: string, endISO: string): number {
 
 export default function LeavePage() {
   const { user } = useAuthStore()
+  const toast = useToast()
   const role = user?.role
   // Owner has no quota and no one to approve them — same rule as
   // /attendance and /ot. Page becomes approval-only for owner.
@@ -310,7 +313,8 @@ export default function LeavePage() {
   }
 
   const cancelOwn = async (id: string) => {
-    if (!confirm('ยกเลิกคำขอลานี้?')) return
+    const ok = await toast.confirm('ยกเลิกคำขอลานี้?', { confirmText: 'ยกเลิกคำขอ', tone: 'danger' })
+    if (!ok) return
     setActingId(id)
     try {
       await leaveApi.cancel(id)
@@ -798,9 +802,15 @@ export default function LeavePage() {
           </div>
 
           {filteredHistory.length === 0
-            ? <p className="text-xs text-gray-400 py-6 text-center">
-                {history.length === 0 ? 'ยังไม่มีประวัติการลา' : 'ไม่มีรายการในสถานะนี้'}
-              </p>
+            ? <EmptyState
+                icon={IconHistory}
+                title={history.length === 0 ? 'ยังไม่มีประวัติการลา' : 'ไม่มีรายการในสถานะนี้'}
+                description={history.length === 0
+                  ? 'คำขอลาที่ส่งจะปรากฏที่นี่ พร้อมสถานะอนุมัติ/ปฏิเสธ'
+                  : 'ลองเปลี่ยน filter เพื่อดูสถานะอื่น'}
+                size="compact"
+                tone="gray"
+              />
             : <div className="divide-y divide-black/[0.05]">
                 {filteredHistory.map((r: any) => {
                   const isPending = r.status === 'pending'
@@ -953,8 +963,6 @@ export default function LeavePage() {
                     <th className="py-2 pr-3 font-medium whitespace-nowrap">รหัส</th>
                     <th className="py-2 pr-3 font-medium">พนักงาน</th>
                     <th className="py-2 pr-3 font-medium hidden sm:table-cell">แผนก</th>
-                    <th className="py-2 pr-3 font-medium whitespace-nowrap hidden md:table-cell">วันที่เริ่มงาน</th>
-                    <th className="py-2 pr-3 font-medium whitespace-nowrap hidden lg:table-cell">วันที่จ้าง</th>
                     {teamColumns.map(c => (
                       <th key={c} className="py-2 pr-3 font-medium text-right whitespace-nowrap">{c}</th>
                     ))}
@@ -982,17 +990,6 @@ export default function LeavePage() {
                       </td>
                       <td className="py-2 pr-3 text-[12px] text-gray-700 hidden sm:table-cell">
                         {emp.department_name || <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="py-2 pr-3 text-[12px] hidden md:table-cell whitespace-nowrap">
-                        {emp.start_date ? (
-                          <div className="leading-tight">
-                            <div className="text-gray-700 tabular-nums">{dayjs(emp.start_date).format('DD/MM/YYYY')}</div>
-                            <div className="text-[10px] text-gray-400">{formatTenure(emp.start_date)}</div>
-                          </div>
-                        ) : <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="py-2 pr-3 text-[12px] text-gray-700 tabular-nums hidden lg:table-cell whitespace-nowrap">
-                        {emp.hire_date ? dayjs(emp.hire_date).format('DD/MM/YYYY') : <span className="text-gray-300">—</span>}
                       </td>
                       {teamColumns.map(c => {
                         const cell = cells.get(c)
@@ -1065,7 +1062,13 @@ export default function LeavePage() {
             </div>
           </div>
           {allRequests.length === 0 ? (
-            <p className="text-xs text-gray-400 py-8 text-center">ไม่มีรายการ</p>
+            <EmptyState
+              icon={IconCalendarOff}
+              title="ไม่มีรายการ"
+              description="ลองเปลี่ยนตัวกรองสถานะข้างบน"
+              size="compact"
+              tone="gray"
+            />
           ) : (
             <div className="overflow-x-auto -mx-4 px-4">
               <table className="w-full text-sm">

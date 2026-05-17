@@ -10,6 +10,7 @@ import {
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import PositionTree from '@/components/positions/PositionTree'
+import { useToast } from '@/components/ui/Toast'
 
 interface Employee {
   id: string
@@ -424,6 +425,7 @@ function DepartmentPanel({
   isHR: boolean
   onChanged: () => void
 }) {
+  const toast = useToast()
   const [showAdd, setShowAdd] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
@@ -474,12 +476,17 @@ function DepartmentPanel({
   }
 
   const remove = async (dept: Department) => {
-    if (!confirm(`ลบแผนก "${dept.name}"?`)) return
+    const ok = await toast.confirm(
+      'ถ้ามีพนักงานในแผนกนี้ ระบบจะไม่ยอมให้ลบ',
+      { title: `ลบแผนก "${dept.name}"?`, tone: 'danger', confirmText: 'ลบ' }
+    )
+    if (!ok) return
     try {
       await departmentApi.delete(dept.id)
+      toast.success('ลบแผนกแล้ว')
       onChanged()
     } catch (e: any) {
-      alert(e.response?.data?.message || 'เกิดข้อผิดพลาด')
+      toast.error(e.response?.data?.message || 'ลบไม่สำเร็จ')
     }
   }
 

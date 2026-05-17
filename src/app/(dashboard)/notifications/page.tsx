@@ -10,6 +10,7 @@ import {
   IconKey, IconUserOff, IconUserCheck,
 } from '@tabler/icons-react'
 import { notificationApi, type Notification } from '@/lib/api'
+import { useToast } from '@/components/ui/Toast'
 
 const META: Record<string, { icon: any; tint: string; label: string }> = {
   leave_request_pending: { icon: IconCalendarOff,  tint: 'bg-amber-50 text-amber-700',     label: 'คำขอลาใหม่' },
@@ -42,6 +43,7 @@ type Filter = 'all' | 'unread'
 
 export default function NotificationsPage() {
   const router = useRouter()
+  const toast = useToast()
   const [items, setItems] = useState<Notification[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -104,7 +106,11 @@ export default function NotificationsPage() {
   }
 
   const handleClearRead = async () => {
-    if (!confirm('ลบรายการที่อ่านแล้วทั้งหมด? (ลบไม่ได้ย้อน)')) return
+    const ok = await toast.confirm(
+      'รายการที่อ่านแล้วทั้งหมดจะถูกลบถาวร',
+      { title: 'ลบการแจ้งเตือนที่อ่านแล้ว?', tone: 'danger', confirmText: 'ลบทั้งหมด' }
+    )
+    if (!ok) return
     setBusy(true)
     try {
       await notificationApi.clearRead()

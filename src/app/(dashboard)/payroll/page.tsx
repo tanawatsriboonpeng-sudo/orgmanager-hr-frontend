@@ -10,6 +10,8 @@ import dayjs from 'dayjs'
 import clsx from 'clsx'
 import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
 import { isLiffConfigured, initLiff, shareViaLine } from '@/lib/liff'
+import { SkeletonRow } from '@/components/ui/Skeleton'
+import EmptyState from '@/components/ui/EmptyState'
 
 const MONTHS_TH = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -167,17 +169,30 @@ export default function PayrollPage() {
 
       {/* List */}
       {loading ? (
-        <div className="card text-center text-sm text-gray-400 py-12">กำลังโหลด…</div>
-      ) : records.length === 0 ? (
-        <div className="card text-center text-sm text-gray-400 py-12">
-          ยังไม่มีสลิปเงินเดือนในช่วงเวลาที่เลือก
-          {canManage && (
-            <div className="mt-3">
-              <button onClick={() => setShowGenerate(true)} className="btn text-xs">
-                <IconWand size={13} /> สร้างสลิปประจำเดือน
-              </button>
+        <div className="card p-0 overflow-hidden">
+          {/* Mimic the row shape so the layout doesn't jump when data
+              arrives — three SkeletonRows is enough to fill above-the-
+              fold on most screens. */}
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className="px-4 border-b border-black/[0.04] last:border-0">
+              <SkeletonRow />
             </div>
-          )}
+          ))}
+        </div>
+      ) : records.length === 0 ? (
+        <div className="card">
+          <EmptyState
+            icon={IconReceipt2}
+            title="ยังไม่มีสลิปในช่วงเวลานี้"
+            description={canManage
+              ? 'กดปุ่มด้านล่างเพื่อสร้างสลิปประจำเดือนให้พนักงานทุกคน'
+              : 'พอ HR สร้างสลิปแล้วจะแสดงที่นี่'}
+            action={canManage
+              ? <button onClick={() => setShowGenerate(true)} className="btn btn-primary text-sm">
+                  <IconWand size={13} /> สร้างสลิปประจำเดือน
+                </button>
+              : undefined}
+          />
         </div>
       ) : canManage ? (
         <PayrollTable records={records} onPick={setSelected} />

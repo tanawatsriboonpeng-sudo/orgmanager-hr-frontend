@@ -12,6 +12,8 @@ import {
 import clsx from 'clsx'
 import Link from 'next/link'
 import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
+import { useToast } from '@/components/ui/Toast'
+import EmptyState from '@/components/ui/EmptyState'
 
 const ROLES = [
   { value: 'owner', label: 'เจ้าของ' },
@@ -60,6 +62,7 @@ const ROLE_ORDER: Record<string, number> = { owner: 0, hr: 1, employee: 2 }
 
 export default function EmployeesPage() {
   const { user } = useAuthStore()
+  const toast = useToast()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
   const [companyName, setCompanyName] = useState<string>('')
@@ -297,7 +300,13 @@ export default function EmployeesPage() {
     const willDisable = emp.is_active
     const verb = willDisable ? 'ระงับ' : 'เปิดใช้งาน'
     const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'พนักงาน'
-    if (!confirm(`ยืนยัน${verb}บัญชีของ ${fullName}?`)) return
+    const ok = await toast.confirm(
+      willDisable
+        ? 'พนักงานจะเข้าใช้งานระบบไม่ได้จนกว่าจะเปิดใหม่'
+        : 'พนักงานจะกลับมาเข้าใช้งานระบบได้ทันที',
+      { title: `${verb}บัญชีของ ${fullName}?`, confirmText: verb, tone: willDisable ? 'danger' : 'default' }
+    )
+    if (!ok) return
     setTogglingId(emp.id)
     try {
       await api.patch(`/employees/${emp.id}/toggle-active`)
@@ -553,8 +562,16 @@ export default function EmployeesPage() {
             </thead>
             <tbody>
               {visible.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-10 text-gray-400">
-                  {employees.length === 0 ? 'ยังไม่มีพนักงาน' : 'ไม่พบที่ตรงกับตัวกรอง'}
+                <tr><td colSpan={6} className="p-0">
+                  <EmptyState
+                    icon={IconUserCircle}
+                    title={employees.length === 0 ? 'ยังไม่มีพนักงาน' : 'ไม่พบที่ตรงกับตัวกรอง'}
+                    description={employees.length === 0
+                      ? 'เพิ่มพนักงานคนแรกของบริษัทโดยกดปุ่ม "เพิ่มพนักงาน"'
+                      : 'ลองลด filter หรือลองค้นด้วยคำอื่น'}
+                    size="default"
+                    tone="gray"
+                  />
                 </td></tr>
               ) : visible.map(emp => (
                 <Fragment key={emp.id}>

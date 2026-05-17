@@ -10,6 +10,7 @@ import {
 import dayjs from 'dayjs'
 import clsx from 'clsx'
 import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
+import { useToast } from '@/components/ui/Toast'
 
 // Backend uses a 4-state CHECK constraint:
 //   pending → hr_approved | rejected (or manager_approved as an
@@ -54,6 +55,7 @@ const todayISO = () => dayjs().format('YYYY-MM-DD')
 
 export default function OTPage() {
   const { user } = useAuthStore()
+  const toast = useToast()
   const role = user?.role
   const isOwner = role === 'owner'
   const canSeePending = role === 'hr' || role === 'owner'
@@ -160,7 +162,8 @@ export default function OTPage() {
   }
 
   const cancelOwn = async (id: string) => {
-    if (!confirm('ยกเลิกคำขอ OT นี้?')) return
+    const ok = await toast.confirm('ยกเลิกคำขอ OT นี้?', { confirmText: 'ยกเลิกคำขอ', tone: 'danger' })
+    if (!ok) return
     setActingId(id)
     try {
       await otApi.cancel(id)
