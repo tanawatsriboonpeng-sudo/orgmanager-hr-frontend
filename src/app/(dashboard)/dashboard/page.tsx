@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/lib/store'
-import { attendanceApi, leaveApi, announcementApi } from '@/lib/api'
+import { attendanceApi, leaveApi, announcementApi, eventApi, type CalendarEvent } from '@/lib/api'
+import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell
 } from 'recharts'
@@ -9,7 +10,8 @@ import {
   IconUsers, IconClockCheck, IconCalendarOff, IconClockPlus,
   IconTrendingUp, IconAlertTriangle, IconBell, IconArrowRight,
   IconCheck, IconClock, IconMapPin, IconX, IconSparkles,
-  IconSpeakerphone, IconChartBar,
+  IconSpeakerphone, IconChartBar, IconBeach, IconCalendarTime,
+  IconUserOff,
 } from '@tabler/icons-react'
 import Link from 'next/link'
 import clsx from 'clsx'
@@ -131,6 +133,10 @@ export default function DashboardPage() {
   const [rejectingId, setRejectingId] = useState<string | null>(null)
   const [rejectingKind, setRejectingKind] = useState<'offsite' | 'backdate' | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+  // Upcoming events for the events widget — visible to everyone (not
+  // gated on isHROrOwner) because employees benefit from seeing what's
+  // scheduled too. Window is "today through next 7 days."
+  const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([])
 
   const loadHRBundle = async () => {
     if (!isHROrOwner) return
@@ -144,6 +150,18 @@ export default function DashboardPage() {
     if (chartRes) setChartRows(chartRes.data.data || [])
     if (offRes)  setOffsitePending(offRes.data.data || [])
     if (bdRes)   setBackdatePending(bdRes.data.data || [])
+  }
+
+  // Load upcoming events for everyone, separately from the HR bundle
+  // so a plain employee still sees them. Visibility filter on the
+  // backend ensures they only see events meant for them.
+  const loadUpcomingEvents = async () => {
+    const today = dayjs().format('YYYY-MM-DD')
+    const to = dayjs().add(7, 'day').format('YYYY-MM-DD')
+    try {
+      const r = await eventApi.list({ from: today, to })
+      setUpcomingEvents(r.data.data || [])
+    } catch { /* widget hides itself on empty/error */ }
   }
 
   useEffect(() => {
@@ -162,6 +180,7 @@ export default function DashboardPage() {
           if (quotaRes.status === 'fulfilled') setLeaveQuota((quotaRes.value as any).data.data || [])
         }
         await loadHRBundle()
+        loadUpcomingEvents() // fire-and-forget — widget is optional
       } finally {
         setLoading(false)
       }
@@ -317,19 +336,23 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Rich attendance overview for HR/owner. Was a 4-card slim grid
-          that mostly showed zeros and felt empty — replaced with the
-          same 6-bucket layout the /attendance daily summary uses, plus
-          inline approval queues for offsite/backdate requests so the
-          owner doesn't have to navigate over to /attendance just to
-          act on pending items. */}
+      {/* HR/owner: per-person status list instead of opaque "5 ยังไม่
+          เข้า" tiles. For small companies (≤30 people) seeing each
+          named row with their status is far more actionable — HR can
+          click a row to open the employee detail, or the inline
+          "บันทึก" button to record attendance for someone who forgot
+          to tap. The pending-approval queues below this stay as-is
+          because they're the other thing HR opens the dashboard for. */}
       {isHROrOwner && summary && (
         <div className="card mb-6"
           style={{ background: 'linear-gradient(135deg, #FFFFFF 0%, #F0F8F4 100%)' }}>
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 className="text-sm font-semibold text-[#111110] flex items-center gap-2">
               <IconUsers size={14} className="text-[#1D9E75]" />
-              ภาพรวมการลงเวลาวันนี้
+              พนักงานวันนี้
+              <span className="text-[11px] font-normal text-gray-400">
+                ({summary.summary.expected ?? summary.summary.total ?? 0} คน)
+              </span>
             </h2>
             <div className="flex items-center gap-2">
               <Link href="/attendance" className="btn text-xs py-1.5" title="ลงเวลาให้พนักงานคนใดก็ได้">
@@ -341,16 +364,30 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            <DashStat label="ทั้งหมด"   value={summary.summary.total ?? 0} color="#6B6A66" />
-            <DashStat label="ตรงเวลา"   value={Math.max(0, (summary.summary.present ?? 0) - (summary.summary.almostLate ?? 0))} color="#1D9E75" />
-            <DashStat label="เกือบสาย"  value={summary.summary.almostLate ?? 0} color="#D9914A" />
-            <DashStat label="มาสาย"     value={summary.summary.late ?? 0} color="#BA7517" />
-            <DashStat label="ยังไม่เข้า" value={summary.summary.notCheckedIn ?? 0} color="#E24B4A" />
-            <DashStat label="ลา"        value={summary.summary.leave ?? 0} color="#534AB7" />
-          </div>
+          {/* Holiday banner — if today's a public holiday, say so
+              prominently. Saves HR from reading "no one checked in"
+              and wondering whether they all called in sick. */}
+          {summary.holiday && (
+            <div className="mb-3 px-3 py-2 rounded-md bg-red-50 border border-red-100 text-red-700 text-xs flex items-center gap-2">
+              <IconBeach size={14} />
+              <span><b>วันนี้เป็นวันหยุด:</b> {summary.holiday.name}</span>
+            </div>
+          )}
 
-          {summary.summary.total > 0 && (
+          {/* Per-person table. Roster comes from backend already
+              owner-excluded; we just merge with the records to find
+              each person's status. */}
+          <PersonStatusList
+            roster={summary.roster || []}
+            records={summary.records || []}
+            holiday={summary.holiday}
+          />
+
+          {/* Attendance rate — kept as a slim progress bar at the
+              bottom for HR who wants a single number, but no longer
+              the primary metric. Hidden when nothing's scheduled
+              (weekend with everyone on dayoff, or a holiday). */}
+          {(summary.summary.expected ?? 0) > 0 && (
             <div className="mt-3">
               <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1">
                 <span>อัตราการเข้างาน</span>
@@ -605,6 +642,16 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Upcoming events — visible to everyone (backend already
+            visibility-filters). Hidden when there's nothing in the
+            7-day window so it doesn't pad the page. */}
+        {upcomingEvents.length > 0 && (
+          <div className={clsx('card', isHROrOwner ? 'lg:col-span-1' : 'lg:col-span-2')}>
+            <SectionHeader title="กิจกรรมเร็วๆ นี้" href="/calendar" />
+            <UpcomingEventsList events={upcomingEvents} />
+          </div>
+        )}
+
         {/* Announcements */}
         <div className={clsx('card', isHROrOwner ? 'lg:col-span-1' : 'lg:col-span-2')}>
           <SectionHeader title="ประกาศ" href="/announcements" />
@@ -664,6 +711,189 @@ export default function DashboardPage() {
         </div>
 
       </div>
+    </div>
+  )
+}
+
+// ============================================================
+// PER-PERSON STATUS LIST (HR/owner)
+// ============================================================
+// Joins the roster (everyone we expect to be working today) with
+// the per-employee attendance record so each row shows: avatar +
+// name + status + (for "ยังไม่เข้า" people) a quick "ลงเวลาให้"
+// link to /attendance.
+//
+// For small companies (≤30 people) this is more actionable than a
+// "5 ยังไม่เข้า" counter — HR sees WHO they need to chase.
+
+interface RosterPerson {
+  id: string
+  first_name: string
+  last_name: string
+  nickname?: string | null
+  avatar_url?: string | null
+  emp_code?: string | null
+  position?: string | null
+  department_name?: string | null
+  is_day_off?: boolean
+  is_holiday?: boolean
+  holiday_name?: string | null
+}
+function PersonStatusList({
+  roster, records, holiday,
+}: {
+  roster: RosterPerson[]
+  records: any[]
+  holiday: { name: string } | null
+}) {
+  if (roster.length === 0) {
+    return (
+      <p className="text-xs text-gray-400 text-center py-6">
+        ยังไม่มีพนักงานในระบบ
+      </p>
+    )
+  }
+  // Index records by employee_id for O(1) lookup in the row map.
+  const recById = new Map<string, any>()
+  for (const r of records) recById.set(r.employee_id, r)
+
+  return (
+    <div className="divide-y divide-black/[0.04] -mx-1">
+      {roster.map(p => {
+        const rec = recById.get(p.id)
+        const status = personStatus(p, rec)
+        return (
+          <div key={p.id} className="flex items-center gap-3 py-2 px-1 hover:bg-white/40 rounded transition-colors">
+            <EmployeeAvatar person={p as any} size={32} />
+            <div className="flex-1 min-w-0">
+              <Link href={`/employees/${p.id}`} className="text-sm font-medium text-[#111110] truncate hover:underline">
+                {p.first_name} {p.last_name}
+                {p.nickname && <span className="text-gray-400 font-normal ml-1">({p.nickname})</span>}
+              </Link>
+              {p.position && (
+                <div className="text-[11px] text-gray-400 truncate">{p.position}</div>
+              )}
+            </div>
+            <PersonStatusBadge status={status} />
+            {status.kind === 'not_checked_in' && (
+              <Link
+                href="/attendance"
+                className="text-[11px] text-[#1D9E75] hover:underline whitespace-nowrap"
+                title="เปิดหน้า /attendance เพื่อบันทึกเวลาให้พนักงานคนนี้"
+              >
+                บันทึก →
+              </Link>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+type PersonStatusKind =
+  | 'on_time' | 'almost_late' | 'late' | 'absent' | 'leave'
+  | 'not_checked_in' | 'day_off' | 'holiday' | 'offsite_pending'
+interface PersonStatus {
+  kind: PersonStatusKind
+  label: string
+  time?: string
+  detail?: string
+}
+
+// Decide what to show for one person. Priority:
+//   1. Holiday for everyone → "วันหยุด name"
+//   2. Their own day-off    → "วันหยุดของคุณ"
+//   3. Have a record        → derive from record.status + flags
+//   4. Otherwise            → ยังไม่เข้า
+function personStatus(p: RosterPerson, rec: any): PersonStatus {
+  if (p.is_holiday) return { kind: 'holiday', label: p.holiday_name || 'วันหยุด' }
+  if (p.is_day_off) return { kind: 'day_off', label: 'วันหยุด' }
+  if (rec) {
+    const time = rec.check_in_at ? dayjs(rec.check_in_at).format('HH:mm') : undefined
+    if (rec.is_offsite && rec.offsite_status === 'pending') {
+      return { kind: 'offsite_pending', label: 'รออนุมัติ (นอกสถานที่)', time }
+    }
+    if (rec.status === 'leave') return { kind: 'leave', label: 'ลา' }
+    if (rec.status === 'absent') return { kind: 'absent', label: 'ขาด' }
+    if (rec.status === 'late') return { kind: 'late', label: 'สาย', time }
+    if (rec.status === 'present' && rec.almost_late) return { kind: 'almost_late', label: 'เกือบสาย', time }
+    if (rec.status === 'present') return { kind: 'on_time', label: 'ตรงเวลา', time }
+  }
+  return { kind: 'not_checked_in', label: 'ยังไม่เข้า' }
+}
+
+function PersonStatusBadge({ status }: { status: PersonStatus }) {
+  // Visual: muted for "you're off" states, color-coded for active
+  // statuses. Time pill sits next to the label when relevant.
+  const STYLE: Record<PersonStatusKind, string> = {
+    on_time:         'bg-emerald-50 text-emerald-700 border-emerald-200',
+    almost_late:     'bg-amber-50 text-amber-700 border-amber-200',
+    late:            'bg-orange-50 text-orange-700 border-orange-200',
+    absent:          'bg-red-50 text-red-700 border-red-200',
+    leave:           'bg-violet-50 text-violet-700 border-violet-200',
+    not_checked_in:  'bg-red-50/60 text-red-600 border-red-100',
+    day_off:         'bg-gray-100 text-gray-600 border-gray-200',
+    holiday:         'bg-red-50 text-red-700 border-red-200',
+    offsite_pending: 'bg-amber-50 text-amber-700 border-amber-200',
+  }
+  return (
+    <span className={clsx(
+      'inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border whitespace-nowrap',
+      STYLE[status.kind] || STYLE.not_checked_in
+    )}>
+      {status.label}
+      {status.time && <span className="opacity-70 tabular-nums">{status.time}</span>}
+    </span>
+  )
+}
+
+// ============================================================
+// UPCOMING EVENTS LIST
+// ============================================================
+// Show today + next ~7 days. Holidays come from a separate table so
+// they're not in this list — the calendar page is where you see all
+// three together. Events here come from calendar_events.
+
+function UpcomingEventsList({ events }: { events: CalendarEvent[] }) {
+  const EVENT_TYPE_LABEL: Record<string, string> = {
+    meeting: 'ประชุม', seminar: 'สัมมนา', company: 'กิจกรรมบริษัท',
+    birthday: 'วันเกิด', other: 'อื่นๆ',
+  }
+  const today = dayjs().format('YYYY-MM-DD')
+  const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD')
+  const friendlyDate = (d: string) => {
+    if (d === today) return 'วันนี้'
+    if (d === tomorrow) return 'พรุ่งนี้'
+    return dayjs(d).format('D MMM')
+  }
+  return (
+    <div className="space-y-2">
+      {events.slice(0, 5).map(e => {
+        const cDot = ({
+          green: 'bg-emerald-500', amber: 'bg-amber-500', red: 'bg-red-500',
+          purple: 'bg-violet-500', blue: 'bg-blue-500', gray: 'bg-gray-400',
+        } as const)[e.color || 'blue'] || 'bg-blue-500'
+        return (
+          <div key={e.id} className="flex items-start gap-2 p-2 rounded-md hover:bg-gray-50">
+            <span className={clsx('w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0', cDot)} />
+            <div className="flex-1 min-w-0">
+              <div className="text-[12px] font-medium text-[#111110] truncate">{e.title}</div>
+              <div className="text-[10px] text-gray-500 flex items-center gap-1.5 mt-0.5">
+                <span className="text-[#1D9E75] font-medium">{friendlyDate(e.start_date)}</span>
+                {e.start_time && <span className="tabular-nums">{String(e.start_time).slice(0, 5)}</span>}
+                <span className="opacity-60">·</span>
+                <span>{EVENT_TYPE_LABEL[e.event_type] || e.event_type}</span>
+              </div>
+            </div>
+          </div>
+        )
+      })}
+      {events.length > 5 && (
+        <div className="text-[11px] text-gray-400 text-center pt-1">
+          +{events.length - 5} กิจกรรม
+        </div>
+      )}
     </div>
   )
 }
