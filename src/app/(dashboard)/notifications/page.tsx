@@ -47,6 +47,7 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState<Filter>('all')
   const [busy, setBusy] = useState(false)
+  const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -111,14 +112,49 @@ export default function NotificationsPage() {
     } finally { setBusy(false) }
   }
 
+  // Precise optimistic delete: capture the row's index so we can splice
+  // it back in on failure (the prior implementation just fired load()
+  // which clobbered scroll + filter state and showed no error). Total
+  // is adjusted in lockstep so the header counter stays consistent.
   const handleDelete = async (n: Notification, e: React.MouseEvent) => {
     e.stopPropagation()
+    if (!items.some(x => x.id === n.id)) return
+    const prevItems = items
+    const prevTotal = total
     setItems(prev => prev.filter(x => x.id !== n.id))
-    notificationApi.delete(n.id).catch(load)
+    setTotal(t => Math.max(0, t - 1))
+    try {
+      await notificationApi.delete(n.id)
+    } catch (err: any) {
+      setItems(prevItems)
+      setTotal(prevTotal)
+      setToast({ text: err?.response?.data?.message || 'ลบไม่สำเร็จ', ok: false })
+    }
   }
+
+  // Toast auto-dismisses error/info banners after 4s so they don't pile
+  // up if the user retries; cleanup on unmount or when toast changes
+  // keeps a stale timer from clobbering a later toast.
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 4000)
+    return () => clearTimeout(t)
+  }, [toast])
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
+      {toast && (
+        <div className={clsx(
+          'mb-4 px-3 py-2 rounded-md border text-xs flex items-center justify-between',
+          toast.ok
+            ? 'bg-green-50 border-green-200 text-green-700'
+            : 'bg-red-50 border-red-200 text-red-700'
+        )}>
+          <span>{toast.text}</span>
+          <button onClick={() => setToast(null)} className="opacity-70 hover:opacity-100">ปิด</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-semibold text-[#111110] flex items-center gap-2">
