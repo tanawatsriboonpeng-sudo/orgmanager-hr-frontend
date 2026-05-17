@@ -77,7 +77,12 @@ export default function CleaningPage() {
   // "ประวัติ" tab label. Lightweight — same listSessions endpoint, single
   // pass, refreshed when a child indicates state may have changed.
   const [pendingCount, setPendingCount] = useState(0)
+  // Bumped on every mutation (submit, approve, reject, reassign). The
+  // HistoryTab subscribes to this in its useEffect deps so its table
+  // re-fetches without a manual refresh after a modal action.
+  const [refreshKey, setRefreshKey] = useState(0)
   const refreshPending = useCallback(async () => {
+    setRefreshKey(k => k + 1)
     if (!isHR) return
     try {
       const r = await cleaningApi.listSessions({ limit: 50 })
@@ -141,7 +146,7 @@ export default function CleaningPage() {
       </div>
 
       {tab === 'today' && <TodayTab flash={flash} isHR={isHR} onChanged={refreshPending} />}
-      {tab === 'history' && <HistoryTab flash={flash} isHR={isHR} onOpenDetail={setOpenSessionId} />}
+      {tab === 'history' && <HistoryTab flash={flash} isHR={isHR} onOpenDetail={setOpenSessionId} refreshKey={refreshKey} />}
       {tab === 'settings' && isHR && <SettingsTab flash={flash} />}
 
       {openSessionId && (
@@ -508,15 +513,18 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
 // HISTORY
 // ============================================================
 
-function HistoryTab({ flash, isHR, onOpenDetail }: {
+function HistoryTab({ flash, isHR, onOpenDetail, refreshKey }: {
   flash: (text: string, ok?: boolean) => void
   isHR: boolean
   onOpenDetail: (sessionId: string) => void
+  refreshKey?: number
 }) {
   const [rows, setRows] = useState<CleaningSessionListRow[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'pending'>('all')
 
+  // refreshKey bumps on every modal mutation (approve/reject/reassign)
+  // so the parent can force a re-fetch without holding a ref.
   useEffect(() => {
     (async () => {
       setLoading(true)
@@ -527,7 +535,8 @@ function HistoryTab({ flash, isHR, onOpenDetail }: {
         flash(e?.response?.data?.message || 'โหลดประวัติไม่สำเร็จ', false)
       } finally { setLoading(false) }
     })()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey])
 
   const filtered = useMemo(() =>
     filter === 'pending' ? rows.filter(r => r.status === 'inspector_reviewed') : rows,
