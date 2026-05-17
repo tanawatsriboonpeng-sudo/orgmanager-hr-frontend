@@ -11,6 +11,7 @@ import {
   IconSparkles, IconPlus, IconTrash, IconCheck, IconX,
   IconClipboardList, IconHistory, IconSettings, IconUser,
   IconArrowUp, IconArrowDown, IconEdit, IconAlertCircle,
+  IconRefresh, IconLock,
 } from '@tabler/icons-react'
 import dayjs from 'dayjs'
 import clsx from 'clsx'
@@ -187,9 +188,15 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
   // Empty string when the row isn't open.
   const [newItemName, setNewItemName] = useState('')
   const [addingItem, setAddingItem] = useState(false)
+  // Last fetch timestamp so HR/owner can tell at a glance how fresh
+  // the panel is. Combined with a manual refresh button + auto-refresh
+  // on tab/window focus, the live-monitoring use case works without
+  // needing a polling interval (which would interrupt edits).
+  const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
-  const load = async () => {
-    setLoading(true)
+  const load = async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true)
     try {
       const r = await cleaningApi.today()
       const data = r.data.data as CleaningSession | null
@@ -198,20 +205,37 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
       if (data) {
         // Pre-fill the form with existing values (handy if inspector
         // already submitted once and HR rejected — they can edit and re-send).
-        const next: typeof formItems = {}
-        for (const it of data.items) {
-          next[it.id] = {
-            doneBy: it.done_by_employee_id || '',
-            notDone: !!it.not_done,
-            note: it.inspector_note || '',
+        // Only do this on initial load — on a refresh while the
+        // inspector is typing, blowing away their in-progress form
+        // state would be infuriating.
+        if (!opts?.silent) {
+          const next: typeof formItems = {}
+          for (const it of data.items) {
+            next[it.id] = {
+              doneBy: it.done_by_employee_id || '',
+              notDone: !!it.not_done,
+              note: it.inspector_note || '',
+            }
           }
+          setFormItems(next)
+          setOverallNote(data.inspector_notes || '')
         }
-        setFormItems(next)
-        setOverallNote(data.inspector_notes || '')
       }
+      setLastFetchedAt(new Date())
     } catch (e: any) {
       flash(e?.response?.data?.message || 'โหลดข้อมูลไม่สำเร็จ', false)
-    } finally { setLoading(false) }
+    } finally {
+      if (!opts?.silent) setLoading(false)
+    }
+  }
+
+  // Manual refresh — same fetch as load() but doesn't reset the form
+  // state, and shows a small spinner on the button.
+  const refresh = async () => {
+    if (refreshing) return
+    setRefreshing(true)
+    try { await load({ silent: true }) }
+    finally { setRefreshing(false) }
   }
 
   const loadEmployees = async () => {
@@ -222,6 +246,21 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
   }
 
   useEffect(() => { load(); loadEmployees() }, [])
+
+  // Auto-refresh when the user comes back to this tab — covers the
+  // "HR opens dashboard in another tab, switches back, expects fresh
+  // data" case without polling. The silent refresh preserves any
+  // in-progress form edits.
+  useEffect(() => {
+    const onFocus = () => { if (document.visibilityState === 'visible') refresh() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Map req.user → employees.id so we can identify "am I the inspector?"
   const myEmpId = useMemo(() => {
@@ -351,11 +390,24 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
       <div className="card">
         <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <h2 className="text-lg font-semibold text-[#111110]">{dateLabel}</h2>
               <span className={clsx('badge', STATUS_BADGE[session.status])}>
                 {STATUS_TH[session.status]}
               </span>
+              {/* Refresh + last-updated. Lets HR/owner monitor live
+                  progress without re-navigating. The timestamp tells
+                  them at a glance whether what they're seeing is stale. */}
+              <button
+                type="button"
+                onClick={refresh}
+                disabled={refreshing}
+                className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-[#1D9E75] disabled:opacity-50"
+                title="โหลดข้อมูลล่าสุด"
+              >
+                <IconRefresh size={12} className={clsx(refreshing && 'animate-spin')} />
+                {refreshing ? 'กำลังโหลด…' : (lastFetchedAt ? `อัปเดต ${dayjs(lastFetchedAt).format('HH:mm:ss')}` : 'รีเฟรช')}
+              </button>
             </div>
             <p className="text-sm text-gray-600">
               ช่วงเวลา <span className="font-medium">{session.start_time?.slice(0,5)}–{session.end_time?.slice(0,5)}</span>
@@ -441,27 +493,37 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
             return (
               <div key={it.id} className="border border-black/[0.06] rounded-md p-3">
                 <div className="flex items-start justify-between gap-3 mb-2">
-                  <div className="flex items-start gap-2">
+                  <div className="flex items-start gap-2 flex-wrap">
                     <span className="text-xs text-gray-400 font-medium mt-0.5">{idx + 1}.</span>
                     <span className="text-sm font-medium text-[#111110]">{it.item_name}</span>
-                    {it.item_id === null && (
+                    {it.item_id === null ? (
                       <span
                         className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px]"
                         title="ผู้ตรวจเพิ่มรายการนี้เอง (ไม่ได้มาจากรายการตั้งค่า)"
                       >
                         เพิ่มเอง
                       </span>
+                    ) : (
+                      <span
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-gray-50 text-gray-500 border border-gray-200 text-[10px]"
+                        title="รายการนี้ตั้งจาก HR/เจ้าของ — แก้/ลบที่หน้าตั้งค่า"
+                      >
+                        <IconLock size={9} /> ตั้งจาก HR
+                      </span>
                     )}
                   </div>
-                  {/* Ad-hoc items can be deleted only by the inspector
-                      while the row is still untouched. Master items
-                      stay — they're managed from the settings tab. */}
+                  {/* Trash icon is strictly for ad-hoc rows (item_id is
+                      NULL) that the inspector added and hasn't filled
+                      yet. Master items can't be removed from here —
+                      the backend rejects DELETE on item_id IS NOT
+                      NULL, so this gate is just to avoid a confusing
+                      red icon that always errors. */}
                   {canFillForm && it.item_id === null && !it.done_by_employee_id && !it.not_done && (
                     <button
                       type="button"
                       onClick={() => deleteAdHocItem(it.id)}
                       className="text-gray-400 hover:text-red-500"
-                      title="ลบรายการนี้"
+                      title="ลบรายการที่เพิ่มเอง"
                     >
                       <IconTrash size={14} />
                     </button>
