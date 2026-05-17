@@ -609,7 +609,7 @@ export default function DashboardPage() {
             </div>
           ) : announcements.length === 0 ? (
             <EmptyState
-              icon={IconMegaphone}
+              icon={IconSpeakerphone}
               title="ยังไม่มีประกาศ"
               description="ประกาศใหม่จากบริษัทจะแสดงที่นี่"
               size="compact"
