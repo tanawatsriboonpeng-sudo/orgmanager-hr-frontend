@@ -74,13 +74,17 @@ export default function AnnouncementsPage() {
   // any failure (offline, 500). Previously the catch was empty so a
   // failed POST left the announcement looking read until the next page
   // load (when load() re-fetched the true state) and the user had no
-  // idea anything went wrong.
+  // idea anything went wrong. After success we also kick the bell so
+  // its badge refreshes without waiting for the 30s poll — the
+  // backend's /announcements/:id/read also clears the linked
+  // notification row.
   const markRead = async (id: string) => {
     const nowIso = new Date().toISOString()
     setItems(list => list.map(a => a.id === id ? { ...a, read_at: nowIso } : a))
     try {
       await announcementApi.markRead(id)
       setMsg('')
+      window.dispatchEvent(new Event('notifications:refresh'))
     } catch (e: any) {
       setItems(list => list.map(a => a.id === id ? { ...a, read_at: null } : a))
       setMsg(e?.response?.data?.message || 'ทำเครื่องหมายอ่านไม่สำเร็จ')

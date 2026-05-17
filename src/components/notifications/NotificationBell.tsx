@@ -64,8 +64,18 @@ export default function NotificationBell() {
     fetchCount()
     const t = setInterval(fetchCount, 30000)
     const onVisibility = () => { if (document.visibilityState === 'visible') fetchCount() }
+    // Other pages dispatch this event when they perform an action that
+    // would change the unread count (e.g. /announcements markRead also
+    // clears the linked bell notification server-side). Without this
+    // the badge waited up to 30s for the next poll to catch up.
+    const onRefresh = () => fetchCount()
     document.addEventListener('visibilitychange', onVisibility)
-    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisibility) }
+    window.addEventListener('notifications:refresh', onRefresh)
+    return () => {
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('notifications:refresh', onRefresh)
+    }
   }, [fetchCount])
 
   // Load the list when the dropdown opens. Don't pre-fetch — list view
