@@ -389,11 +389,13 @@ function DayPanel({
               <div key={e.id} className={clsx('p-2.5 rounded-md border', c.chip)}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 text-[11px] font-medium mb-1">
-                      <span className={clsx('w-2 h-2 rounded-full', c.dot)} />
-                      {EVENT_TYPE_LABEL[e.event_type] || e.event_type}
+                    {/* Color dot + title on one line. Type label dropped
+                        when we removed the type picker — the dot alone
+                        carries the visual category now. */}
+                    <div className="flex items-center gap-2">
+                      <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', c.dot)} />
+                      <div className="text-sm font-medium text-[#111110]">{e.title}</div>
                     </div>
-                    <div className="text-sm font-medium text-[#111110]">{e.title}</div>
                     {(e.start_time || e.end_time) && (
                       <div className="flex items-center gap-1 text-[11px] text-gray-600 mt-1">
                         <IconClock size={11} />
@@ -534,18 +536,10 @@ function EventEditorModal({ initial, defaultDate, onClose, onSaved, onError }: {
               autoFocus
             />
           </div>
-          <div>
-            <label className="label">ประเภท</label>
-            <select
-              className="input"
-              value={form.eventType}
-              onChange={e => setForm(p => ({ ...p, eventType: e.target.value }))}
-            >
-              {Object.entries(EVENT_TYPE_LABEL).map(([v, l]) => (
-                <option key={v} value={v}>{l}</option>
-              ))}
-            </select>
-          </div>
+          {/* "ประเภท" dropdown removed per UX feedback — color picker
+              below already lets the user differentiate event kinds.
+              eventType silently defaults to 'meeting' on the backend
+              if not sent, so all rows stay valid. */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">วันเริ่ม *</label>
