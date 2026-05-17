@@ -561,7 +561,7 @@ function OfficeLocationsCard() {
   }
 
   return (
-    <div className="card">
+    <div className="card mb-5">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-[#111110] flex items-center gap-2">
           <IconMapPin size={15} className="text-gray-400" />
