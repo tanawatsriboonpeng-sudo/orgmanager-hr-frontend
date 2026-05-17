@@ -827,28 +827,50 @@ function DailySummaryCard({
                 )
               })}
 
-              {/* Rejected off-site requests — kept here so HR can see what
-                  they rejected today, but separated from the green/amber
-                  buckets above. Rendered muted because these don't count
-                  toward attendance. */}
+              {/* "ไม่อนุมัติคำขอลงนอกสถานที่" — framed as a record of HR's
+                  decision, not a judgement on the employee. Neutral gray
+                  styling, no strikethrough; the row reads as a log entry
+                  showing both what the employee asked for and what HR
+                  noted when declining, with the selfie thumbnail for
+                  context recall. */}
               {rejectedRecords.length > 0 && (
                 <div>
                   <div className="text-[11px] font-medium text-gray-500 mb-1.5 flex items-center gap-1.5">
-                    <span className="badge badge-red">ปฏิเสธลงนอกสถานที่</span>
-                    <span>{rejectedRecords.length} คน</span>
+                    <span className="badge badge-gray">ไม่อนุมัติคำขอลงนอกสถานที่</span>
+                    <span>{rejectedRecords.length} รายการ</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                     {rejectedRecords.map((r: any) => (
-                      <div key={r.id} className="flex items-center gap-2 px-2 py-1.5 rounded-[8px] bg-red-50/40 border border-red-100 opacity-80">
-                        <EmployeeAvatar person={r} size={26} />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-[#111110] truncate line-through">
-                            {r.first_name} {r.last_name}
+                      <div key={r.id} className="flex items-start gap-2.5 px-2.5 py-2 rounded-[8px] bg-gray-50/80 border border-black/[0.05]">
+                        {r.check_in_selfie ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={r.check_in_selfie}
+                            alt=""
+                            className="w-9 h-9 rounded-[6px] object-cover border border-black/[0.05] flex-shrink-0"
+                          />
+                        ) : (
+                          <EmployeeAvatar person={r} size={36} />
+                        )}
+                        <div className="flex-1 min-w-0 leading-snug">
+                          <div className="flex items-baseline gap-1.5 flex-wrap">
+                            <span className="text-xs font-medium text-[#111110] truncate">
+                              {r.first_name} {r.last_name}
+                            </span>
+                            <span className="text-[10px] text-gray-400 tabular-nums">
+                              {r.check_in_at ? dayjs(r.check_in_at).format('HH:mm') : '—'}
+                            </span>
                           </div>
-                          <div className="text-[10px] text-gray-500 tabular-nums">
-                            {r.check_in_at ? dayjs(r.check_in_at).format('HH:mm') : '—'}
-                            {r.offsite_reject_reason && <span className="ml-1 text-red-500">· {r.offsite_reject_reason}</span>}
-                          </div>
+                          {r.offsite_reason && (
+                            <div className="text-[10px] text-gray-500 mt-0.5 truncate" title={r.offsite_reason}>
+                              คำขอ: {r.offsite_reason}
+                            </div>
+                          )}
+                          {r.offsite_reject_reason && (
+                            <div className="text-[10px] text-gray-500 mt-0.5 truncate" title={r.offsite_reject_reason}>
+                              หมายเหตุ: {r.offsite_reject_reason}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
