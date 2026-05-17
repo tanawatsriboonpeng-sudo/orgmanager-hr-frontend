@@ -174,6 +174,11 @@ export interface LeaveQuotaRow {
   emp_code?: string
   position?: string | null
   department_name?: string | null
+  // ISO date strings (YYYY-MM-DD). Used by the team-quota table to
+  // render start-date, hire-date, and tenure ("X ปี Y เดือน").
+  start_date?: string | null
+  hire_date?: string | null
+  emp_is_active?: boolean
   leave_type_name?: string
   leave_type_code?: string
 }

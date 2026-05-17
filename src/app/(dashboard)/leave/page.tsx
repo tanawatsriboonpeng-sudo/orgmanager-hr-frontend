@@ -89,6 +89,10 @@ export default function LeavePage() {
   const [pending, setPending] = useState<any[]>([])
   const [teamQuotas, setTeamQuotas] = useState<LeaveQuotaRow[]>([])
   const [teamYear, setTeamYear] = useState<number>(dayjs().year())
+  // Live filter for the team-quota table — matches on name, nickname,
+  // emp_code, department, or position so HR can find any row by typing
+  // a single substring.
+  const [teamSearch, setTeamSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
 
   const [form, setForm] = useState<{
@@ -329,7 +333,9 @@ export default function LeavePage() {
   // columns = union of leave-type names; rows = one per employee, with
   // a cells map keyed by leave-type name. Column order is alphabetical
   // (Thai locale) so a leave_type that appears for some employees but
-  // not others still gets a stable column slot.
+  // not others still gets a stable column slot. Applies the live search
+  // filter at the row level so the column set doesn't shift while
+  // typing.
   const { teamColumns, teamRows } = useMemo(() => {
     const cols = new Set<string>()
     const byEmp = new Map<string, { emp: LeaveQuotaRow; cells: Map<string, LeaveQuotaRow> }>()
@@ -340,12 +346,79 @@ export default function LeavePage() {
       if (tname) byEmp.get(r.employee_id)!.cells.set(tname, r)
     }
     const columns = Array.from(cols).sort((a, b) => a.localeCompare(b, 'th'))
-    const rows = Array.from(byEmp.values()).sort((a, b) =>
+    const q = teamSearch.trim().toLowerCase()
+    const allRows = Array.from(byEmp.values())
+    const filtered = q === '' ? allRows : allRows.filter(({ emp }) => {
+      const haystack = [
+        emp.first_name, emp.last_name, emp.nickname,
+        emp.emp_code, emp.department_name, emp.position,
+      ].filter(Boolean).join(' ').toLowerCase()
+      return haystack.includes(q)
+    })
+    const rows = filtered.sort((a, b) =>
       `${a.emp.first_name || ''} ${a.emp.last_name || ''}`
         .localeCompare(`${b.emp.first_name || ''} ${b.emp.last_name || ''}`, 'th')
     )
     return { teamColumns: columns, teamRows: rows }
-  }, [teamQuotas])
+  }, [teamQuotas, teamSearch])
+
+  // "X ปี Y เดือน" tenure from an ISO date, used in the start-date /
+  // hire-date columns. Returns "—" for missing dates and "0 วัน" for
+  // same-day so the column never shows raw nulls.
+  function formatTenure(iso?: string | null): string {
+    if (!iso) return '—'
+    const start = dayjs(iso)
+    if (!start.isValid()) return '—'
+    const now = dayjs()
+    if (now.isBefore(start)) return '—'
+    const years = now.diff(start, 'year')
+    const afterYears = start.add(years, 'year')
+    const months = now.diff(afterYears, 'month')
+    if (years === 0 && months === 0) return `${now.diff(start, 'day')} วัน`
+    const parts: string[] = []
+    if (years)  parts.push(`${years} ปี`)
+    if (months) parts.push(`${months} เดือน`)
+    return parts.join(' ')
+  }
+
+  // CSV export of the currently-rendered (filtered) team-quota table.
+  // BOM + UTF-8 so Excel opens Thai text without garbling.
+  const exportTeamCSV = () => {
+    const header = ['รหัสพนักงาน', 'ชื่อ', 'ชื่อเล่น', 'แผนก', 'ตำแหน่ง',
+      'วันที่เริ่มงาน', 'อายุงาน', 'วันที่จ้าง',
+      ...teamColumns.flatMap(c => [`${c} (ใช้)`, `${c} (เต็ม)`, `${c} (เหลือ)`])]
+    const lines = teamRows.map(({ emp, cells }) => {
+      const base = [
+        emp.emp_code || '',
+        `${emp.first_name || ''} ${emp.last_name || ''}`.trim(),
+        emp.nickname || '',
+        emp.department_name || '',
+        emp.position || '',
+        emp.start_date || '',
+        formatTenure(emp.start_date),
+        emp.hire_date || '',
+      ]
+      const quotaCols = teamColumns.flatMap(c => {
+        const cell = cells.get(c)
+        if (!cell) return ['', '', '']
+        return [String(cell.used_days || 0), String(cell.total_days || 0), String(cell.remaining_days ?? '')]
+      })
+      return [...base, ...quotaCols]
+    })
+    const csv = [header, ...lines]
+      .map(row => row.map(v => {
+        const s = String(v ?? '')
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+      }).join(','))
+      .join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `โควตาลา-ปี-${teamYear + 543}.csv`
+    document.body.appendChild(a); a.click(); a.remove()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -803,6 +876,13 @@ export default function LeavePage() {
               <span className="text-[11px] font-normal text-gray-400">({teamRows.length} คน)</span>
             </h2>
             <div className="flex items-center gap-2 flex-wrap">
+              <input
+                type="text"
+                placeholder="ค้นหา ชื่อ/รหัส/แผนก/ตำแหน่ง"
+                value={teamSearch}
+                onChange={e => setTeamSearch(e.target.value)}
+                className="input text-xs py-1.5 px-2 w-56"
+              />
               <button
                 onClick={() => setSetQuotaOpen(true)}
                 className="btn btn-primary text-xs"
@@ -817,6 +897,14 @@ export default function LeavePage() {
                 title="สร้างโควตาเริ่มต้นของปีนี้ให้พนักงานทุกคน (ที่ยังไม่มี)"
               >
                 <IconPlus size={13} /> {seedingQuotas ? 'กำลังสร้าง…' : 'สร้างโควตาให้ทุกคน'}
+              </button>
+              <button
+                onClick={exportTeamCSV}
+                disabled={teamRows.length === 0}
+                className="btn text-xs"
+                title="ดาวน์โหลดเป็นไฟล์ Excel (CSV) ตามข้อมูลที่กรองไว้"
+              >
+                <IconFileText size={13} /> Excel
               </button>
               <label className="text-[11px] text-gray-500 ml-2">ปี</label>
               <select
@@ -859,8 +947,11 @@ export default function LeavePage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-[11px] text-gray-500 border-b border-black/[0.06]">
+                    <th className="py-2 pr-3 font-medium whitespace-nowrap">รหัส</th>
                     <th className="py-2 pr-3 font-medium">พนักงาน</th>
                     <th className="py-2 pr-3 font-medium hidden sm:table-cell">แผนก</th>
+                    <th className="py-2 pr-3 font-medium whitespace-nowrap hidden md:table-cell">วันที่เริ่มงาน</th>
+                    <th className="py-2 pr-3 font-medium whitespace-nowrap hidden lg:table-cell">วันที่จ้าง</th>
                     {teamColumns.map(c => (
                       <th key={c} className="py-2 pr-3 font-medium text-right whitespace-nowrap">{c}</th>
                     ))}
@@ -869,6 +960,9 @@ export default function LeavePage() {
                 <tbody className="divide-y divide-black/[0.04]">
                   {teamRows.map(({ emp, cells }) => (
                     <tr key={emp.employee_id} className="hover:bg-gray-50/60">
+                      <td className="py-2 pr-3 text-[12px] text-gray-500 tabular-nums whitespace-nowrap">
+                        {emp.emp_code || <span className="text-gray-300">—</span>}
+                      </td>
                       <td className="py-2 pr-3">
                         <div className="flex items-center gap-2 min-w-0">
                           <EmployeeAvatar person={emp} size={26} />
@@ -885,6 +979,17 @@ export default function LeavePage() {
                       </td>
                       <td className="py-2 pr-3 text-[12px] text-gray-700 hidden sm:table-cell">
                         {emp.department_name || <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="py-2 pr-3 text-[12px] hidden md:table-cell whitespace-nowrap">
+                        {emp.start_date ? (
+                          <div className="leading-tight">
+                            <div className="text-gray-700 tabular-nums">{dayjs(emp.start_date).format('DD/MM/YYYY')}</div>
+                            <div className="text-[10px] text-gray-400">{formatTenure(emp.start_date)}</div>
+                          </div>
+                        ) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="py-2 pr-3 text-[12px] text-gray-700 tabular-nums hidden lg:table-cell whitespace-nowrap">
+                        {emp.hire_date ? dayjs(emp.hire_date).format('DD/MM/YYYY') : <span className="text-gray-300">—</span>}
                       </td>
                       {teamColumns.map(c => {
                         const cell = cells.get(c)
