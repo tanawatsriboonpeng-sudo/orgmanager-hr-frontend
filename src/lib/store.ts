@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import Cookies from 'js-cookie'
-import { authApi } from '@/lib/api'
+import { authApi, lineAuthApi } from '@/lib/api'
 
 interface User {
   id: string
@@ -23,6 +23,12 @@ interface AuthState {
   isLoading: boolean
   isAuthenticated: boolean
   login: (email: string, password: string, role?: string) => Promise<void>
+  // Returns 'ok' (signed in), 'not-linked' (need email/password to pair),
+  // or throws on real errors. The 2-arg form completes the pairing.
+  loginWithLine: (
+    lineAccessToken: string,
+    pair?: { email: string; password: string }
+  ) => Promise<{ status: 'ok' } | { status: 'not-linked'; lineDisplayName?: string; linePictureUrl?: string }>
   logout: () => Promise<void>
   fetchMe: () => Promise<void>
 }
@@ -38,6 +44,37 @@ export const useAuthStore = create<AuthState>((set) => ({
     Cookies.set('access_token', accessToken, { expires: 1, sameSite: 'strict' })
     Cookies.set('refresh_token', refreshToken, { expires: 30, sameSite: 'strict' })
     set({ user, isAuthenticated: true })
+  },
+
+  loginWithLine: async (lineAccessToken, pair) => {
+    try {
+      const { data } = await lineAuthApi.login(
+        lineAccessToken,
+        pair?.email,
+        pair?.password,
+      )
+      const { accessToken, refreshToken, user } = data.data
+      Cookies.set('access_token', accessToken, { expires: 1, sameSite: 'strict' })
+      Cookies.set('refresh_token', refreshToken, { expires: 30, sameSite: 'strict' })
+      set({ user, isAuthenticated: true })
+      return { status: 'ok' as const }
+    } catch (err: any) {
+      // 404 + LINE_NOT_LINKED is an expected branch, not an error — surface
+      // it so the login page can render the pairing form. Anything else
+      // bubbles up to the caller's try/catch.
+      if (
+        err?.response?.status === 404 &&
+        err?.response?.data?.code === 'LINE_NOT_LINKED'
+      ) {
+        const d = err.response.data?.data || {}
+        return {
+          status: 'not-linked' as const,
+          lineDisplayName: d.lineDisplayName,
+          linePictureUrl: d.linePictureUrl,
+        }
+      }
+      throw err
+    }
   },
 
   logout: async () => {

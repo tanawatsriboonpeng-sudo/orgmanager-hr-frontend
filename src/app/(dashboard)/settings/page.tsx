@@ -1,14 +1,19 @@
 'use client'
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
-import { employeeApi, orgApi, officeLocationApi, type OrgSettings, type OfficeLocation } from '@/lib/api'
+import { employeeApi, orgApi, officeLocationApi, lineAuthApi, type OrgSettings, type OfficeLocation } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import {
+  initLiff, isLiffConfigured, isInLiff, isLoggedInLine,
+  lineLogin as triggerLineLogin, lineLogout as triggerLineLogout,
+  getLineAccessToken,
+} from '@/lib/liff'
 import {
   IconUser, IconKey, IconMail, IconBuildingCommunity,
   IconBriefcase, IconShieldLock, IconChevronRight,
   IconCrown, IconUsers, IconPhoto, IconX, IconCheck,
   IconPhone, IconEdit, IconUserCircle, IconMapPin, IconPlus,
-  IconTrash, IconCurrentLocation,
+  IconTrash, IconCurrentLocation, IconBrandLine,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 
@@ -39,6 +44,7 @@ interface Profile {
   department_name?: string
   avatar_url?: string | null
   role?: string
+  line_user_id?: string | null
 }
 
 async function fileToResizedBase64(file: File, maxSize = 400, quality = 0.85): Promise<string> {
@@ -276,6 +282,12 @@ export default function SettingsPage() {
 
       {/* Office Locations — owner only */}
       {role === 'owner' && <OfficeLocationsCard />}
+
+      {/* LINE account link — everyone */}
+      <LineLinkCard
+        linked={!!profile?.line_user_id}
+        onChanged={load}
+      />
 
       {/* Security Section */}
       <div className="card">
@@ -737,6 +749,131 @@ function OfficeLocationForm({ initial, onCancel, onSaved, onError }: {
           {saving ? 'กำลังบันทึก…' : initial ? 'บันทึก' : 'เพิ่ม'}
         </button>
       </div>
+    </div>
+  )
+}
+
+// ============================================================
+// LINE ACCOUNT LINK
+// ============================================================
+// Lets a signed-in user attach (or detach) their LINE userId. Two paths
+// to a token:
+//   - Inside LIFF: we already have a LINE access token after init().
+//   - Web browser: trigger liff.login() which redirects through the LINE
+//     OAuth page and bounces back here; we then read the token on mount.
+// Hidden entirely when NEXT_PUBLIC_LIFF_ID isn't configured so dev/test
+// environments without a LIFF channel don't see broken buttons.
+
+function LineLinkCard({ linked, onChanged }: { linked: boolean; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [liffReady, setLiffReady] = useState(false)
+  const [inClient, setInClient] = useState(false)
+
+  useEffect(() => {
+    if (!isLiffConfigured()) return
+    initLiff().then(({ ready, inClient }) => {
+      setLiffReady(ready); setInClient(inClient)
+    })
+  }, [])
+
+  // After liff.login() the page reloads here with a fresh LINE token.
+  // If the user is already signed in via email and not yet linked, we
+  // auto-bind so they don't have to click again.
+  useEffect(() => {
+    if (!liffReady || linked) return
+    const token = getLineAccessToken()
+    if (!token) return
+    if (!isLoggedInLine()) return
+    // Don't auto-link silently — the user may have hit liff.login() from
+    // a context they don't remember. Wait for explicit click.
+  }, [liffReady, linked])
+
+  if (!isLiffConfigured()) return null
+
+  const handleLink = async () => {
+    setBusy(true); setMsg(null)
+    try {
+      if (!liffReady) {
+        setMsg({ text: 'LIFF ยังไม่พร้อม', ok: false }); return
+      }
+      if (!isLoggedInLine()) {
+        // Redirects to LINE OAuth then back to this exact URL. The next
+        // render will have getLineAccessToken() available.
+        triggerLineLogin(window.location.href)
+        return
+      }
+      const token = getLineAccessToken()
+      if (!token) {
+        setMsg({ text: 'อ่าน LINE token ไม่สำเร็จ', ok: false }); return
+      }
+      await lineAuthApi.link(token)
+      setMsg({ text: 'ผูกบัญชี LINE แล้ว', ok: true })
+      onChanged()
+    } catch (e: any) {
+      setMsg({ text: e?.response?.data?.message || 'ผูกบัญชีไม่สำเร็จ', ok: false })
+    } finally { setBusy(false) }
+  }
+
+  const handleUnlink = async () => {
+    if (!confirm('ยกเลิกการผูกบัญชี LINE? หลังจากนี้จะเข้าสู่ระบบผ่าน LINE OA ไม่ได้จนกว่าจะผูกใหม่')) return
+    setBusy(true); setMsg(null)
+    try {
+      await lineAuthApi.unlink()
+      // Also clear the LIFF session — otherwise next auto-login from LIFF
+      // will silently re-bind via the LINE_NOT_LINKED branch and confuse
+      // the user.
+      if (liffReady && !inClient) triggerLineLogout()
+      setMsg({ text: 'ยกเลิกการผูกบัญชี LINE แล้ว', ok: true })
+      onChanged()
+    } catch (e: any) {
+      setMsg({ text: e?.response?.data?.message || 'ยกเลิกไม่สำเร็จ', ok: false })
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card mb-5">
+      <h2 className="text-sm font-semibold text-[#111110] mb-3 flex items-center gap-2">
+        <IconBrandLine size={15} className="text-[#06C755]" />
+        บัญชี LINE
+      </h2>
+
+      <div className="flex items-start gap-3 p-3 rounded-[10px] border border-black/[0.05] bg-gray-50/60">
+        <div className="w-9 h-9 rounded-full bg-[#06C755] text-white flex items-center justify-center flex-shrink-0">
+          <IconBrandLine size={18} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-[#111110]">
+            {linked ? 'ผูกบัญชีแล้ว' : 'ยังไม่ผูกบัญชี'}
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            {linked
+              ? 'เปิดแอปผ่าน LINE OA แล้วเข้าใช้งานได้เลย ไม่ต้องกรอกอีเมล/รหัสผ่าน'
+              : 'ผูกเพื่อให้เปิดผ่าน LINE OA แล้วเข้าระบบอัตโนมัติ'}
+          </div>
+        </div>
+        {linked ? (
+          <button onClick={handleUnlink} disabled={busy} className="btn text-xs text-red-600 border-red-200 hover:bg-red-50">
+            {busy ? '...' : 'ยกเลิก'}
+          </button>
+        ) : (
+          <button onClick={handleLink} disabled={busy} className="btn btn-primary text-xs"
+            style={{ background: '#06C755', borderColor: '#06C755' }}>
+            {busy ? '...' : 'ผูกบัญชี'}
+          </button>
+        )}
+      </div>
+
+      {msg && (
+        <div className={clsx(
+          'mt-3 px-3 py-2 rounded-md text-xs flex items-center gap-2 border',
+          msg.ok ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
+        )}>
+          {msg.ok ? <IconCheck size={13} /> : <IconX size={13} />}
+          <span className="flex-1">{msg.text}</span>
+          <button onClick={() => setMsg(null)} className="opacity-70 hover:opacity-100">ปิด</button>
+        </div>
+      )}
     </div>
   )
 }

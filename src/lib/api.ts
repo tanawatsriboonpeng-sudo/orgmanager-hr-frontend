@@ -58,6 +58,18 @@ export const authApi = {
     api.post('/auth/change-password', { currentPassword, newPassword }),
 }
 
+// LINE / LIFF auth. lineLogin returns 404 + code:'LINE_NOT_LINKED' when
+// this LINE userId has never been paired with an employee account — the
+// caller should then present an email/password form and retry, which
+// performs the bind and issues JWTs in the same response.
+export const lineAuthApi = {
+  login: (lineAccessToken: string, email?: string, password?: string) =>
+    api.post('/auth/line-login', { lineAccessToken, email, password }),
+  link: (lineAccessToken: string) =>
+    api.post('/auth/line-link', { lineAccessToken }),
+  unlink: () => api.post('/auth/line-unlink'),
+}
+
 // Attendance APIs
 export const attendanceApi = {
   checkIn: (lat?: number, lng?: number, method = 'gps', selfie?: string) =>
