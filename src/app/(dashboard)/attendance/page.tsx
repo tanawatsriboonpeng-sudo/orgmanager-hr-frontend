@@ -102,6 +102,12 @@ export default function AttendancePage() {
   // Off-site check-ins awaiting HR/owner approval. Loaded alongside the
   // daily summary so refresh button covers both.
   const [offsitePending, setOffsitePending] = useState<any[]>([])
+  // Backdated check-in/out requests awaiting HR/owner approval.
+  const [backdatePending, setBackdatePending] = useState<any[]>([])
+  // Employee's own backdate request history (shown to non-HR users).
+  const [myBackdates, setMyBackdates] = useState<any[]>([])
+  // Backdate request modal toggle.
+  const [showBackdate, setShowBackdate] = useState(false)
 
   // Toast
   const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null)
@@ -141,14 +147,43 @@ export default function AttendancePage() {
     if (!canSeeDaily) return
     setDailyLoading(true)
     try {
-      const [sumR, offsiteR] = await Promise.allSettled([
+      const [sumR, offsiteR, backdateR] = await Promise.allSettled([
         attendanceApi.dailySummary(dailyDate),
         attendanceApi.offsitePending(),
+        attendanceApi.backdatePending(),
       ])
       setDaily(sumR.status === 'fulfilled' ? sumR.value.data.data : null)
       setOffsitePending(offsiteR.status === 'fulfilled' ? (offsiteR.value.data.data || []) : [])
+      setBackdatePending(backdateR.status === 'fulfilled' ? (backdateR.value.data.data || []) : [])
     } finally { setDailyLoading(false) }
   }, [canSeeDaily, dailyDate])
+
+  const loadMyBackdates = useCallback(async () => {
+    if (isOwner || canSeeDaily) return  // owner has no employee record; HR sees the pending queue separately
+    try {
+      const r = await attendanceApi.myBackdates()
+      setMyBackdates(r.data.data || [])
+    } catch {}
+  }, [isOwner, canSeeDaily])
+
+  const handleApproveBackdate = async (id: string) => {
+    try {
+      await attendanceApi.approveBackdate(id)
+      flash('อนุมัติคำขอลงเวลาย้อนหลังแล้ว')
+      loadDaily()
+    } catch (e: any) {
+      flash(e.response?.data?.message || 'อนุมัติไม่สำเร็จ', false)
+    }
+  }
+  const handleRejectBackdate = async (id: string, reason: string) => {
+    try {
+      await attendanceApi.rejectBackdate(id, reason)
+      flash('ปฏิเสธคำขอแล้ว')
+      loadDaily()
+    } catch (e: any) {
+      flash(e.response?.data?.message || 'ปฏิเสธไม่สำเร็จ', false)
+    }
+  }
 
   const handleApproveOffsite = async (id: string) => {
     try {
@@ -172,6 +207,7 @@ export default function AttendancePage() {
   useEffect(() => { loadToday() }, [loadToday])
   useEffect(() => { loadHistory() }, [loadHistory])
   useEffect(() => { loadDaily() }, [loadDaily])
+  useEffect(() => { loadMyBackdates() }, [loadMyBackdates])
 
   // Auto-fetch GPS on mount for non-owner so they don't always have to
   // click the button. Falls back silently if denied/unsupported and the
@@ -296,6 +332,9 @@ export default function AttendancePage() {
           offsitePending={offsitePending}
           onApproveOffsite={handleApproveOffsite}
           onRejectOffsite={handleRejectOffsite}
+          backdatePending={backdatePending}
+          onApproveBackdate={handleApproveBackdate}
+          onRejectBackdate={handleRejectBackdate}
         />
       )}
 
@@ -481,6 +520,16 @@ export default function AttendancePage() {
                   เช็คเอาท์
                 </button>
               </div>
+              {/* Secondary action — small link-style so it doesn't
+                  compete with the primary check-in/out buttons but is
+                  still discoverable when the employee realises they
+                  missed a tap on a past day. */}
+              <button
+                onClick={() => setShowBackdate(true)}
+                className="w-full mt-3 text-[11px] text-[#1D9E75] hover:underline text-center"
+              >
+                ลืมลงเวลา? ขอลงเวลาย้อนหลัง →
+              </button>
             </div>
 
             {/* Monthly summary */}
@@ -620,6 +669,18 @@ export default function AttendancePage() {
           busy={acting}
         />
       )}
+
+      {showBackdate && (
+        <BackdateRequestModal
+          onClose={() => setShowBackdate(false)}
+          onSubmitted={() => {
+            setShowBackdate(false)
+            flash('ส่งคำขอลงเวลาย้อนหลังแล้ว')
+            loadMyBackdates()
+          }}
+          onError={(m) => flash(m, false)}
+        />
+      )}
     </div>
   )
 }
@@ -628,6 +689,7 @@ export default function AttendancePage() {
 function DailySummaryCard({
   date, onDateChange, data, loading, expanded, onToggle, onRefresh,
   offsitePending, onApproveOffsite, onRejectOffsite,
+  backdatePending, onApproveBackdate, onRejectBackdate,
 }: {
   date: string
   onDateChange: (d: string) => void
@@ -639,12 +701,18 @@ function DailySummaryCard({
   offsitePending: any[]
   onApproveOffsite: (id: string) => void
   onRejectOffsite: (id: string, reason: string) => void
+  backdatePending: any[]
+  onApproveBackdate: (id: string) => void
+  onRejectBackdate: (id: string, reason: string) => void
 }) {
   const summary = data?.summary
   const records = data?.records || []
   const rejectedRecords = data?.rejectedRecords || []
   // Inline reject flow: which row is being rejected, and the reason text.
+  // Tagged with the queue (offsite|backdate) since they share UI but
+  // different reject endpoints.
   const [rejectingId, setRejectingId] = useState<string | null>(null)
+  const [rejectingKind, setRejectingKind] = useState<'offsite' | 'backdate' | null>(null)
   const [rejectReason, setRejectReason] = useState('')
 
   const groups = useMemo(() => {
@@ -746,7 +814,7 @@ function DailySummaryCard({
                       <IconCheck size={12} /> อนุมัติ
                     </button>
                     <button
-                      onClick={() => { setRejectingId(r.id); setRejectReason('') }}
+                      onClick={() => { setRejectingId(r.id); setRejectingKind('offsite'); setRejectReason('') }}
                       className="btn text-[11px] px-2 py-1 text-red-600 border-red-200 hover:bg-red-50"
                       title="ปฏิเสธ"
                     >
@@ -754,7 +822,7 @@ function DailySummaryCard({
                     </button>
                   </div>
                 </div>
-                {rejectingId === r.id && (
+                {rejectingId === r.id && rejectingKind === 'offsite' && (
                   <div className="mt-2 p-2 rounded-[8px] bg-red-50/60 border border-red-100">
                     <textarea
                       className="input text-[11px] min-h-[40px]"
@@ -765,13 +833,13 @@ function DailySummaryCard({
                     />
                     <div className="flex gap-1.5 mt-1.5">
                       <button
-                        onClick={() => { onRejectOffsite(r.id, rejectReason); setRejectingId(null) }}
+                        onClick={() => { onRejectOffsite(r.id, rejectReason); setRejectingId(null); setRejectingKind(null) }}
                         className="btn text-[11px] text-red-600 border-red-200 hover:bg-red-50"
                       >
                         ยืนยันปฏิเสธ
                       </button>
                       <button
-                        onClick={() => { setRejectingId(null); setRejectReason('') }}
+                        onClick={() => { setRejectingId(null); setRejectingKind(null); setRejectReason('') }}
                         className="btn text-[11px]"
                       >
                         ยกเลิก
@@ -781,6 +849,89 @@ function DailySummaryCard({
                 )}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Backdated check-in/check-out approval queue. Same layout family
+          as the off-site queue (amber-tinted, inline approve/reject).
+          Hidden when empty so the card stays compact. */}
+      {backdatePending.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-black/[0.05]">
+          <h3 className="text-xs font-semibold text-[#111110] mb-2 flex items-center gap-2">
+            <IconClock size={12} className="text-[#534AB7]" />
+            ลงเวลาย้อนหลังรออนุมัติ
+            <span className="text-[10px] font-normal text-gray-400">({backdatePending.length})</span>
+          </h3>
+          <div className="space-y-2">
+            {backdatePending.map((r: any) => {
+              const typeTxt = r.request_type === 'both'     ? 'เข้า+ออกงาน'
+                            : r.request_type === 'check_in' ? 'เข้างาน'
+                            :                                  'ออกงาน'
+              return (
+                <div key={r.id} className="rounded-[10px] border border-violet-200 bg-violet-50/30 p-2.5">
+                  <div className="flex items-start gap-2.5">
+                    <EmployeeAvatar person={r} size={32} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[13px] font-medium text-[#111110]">{r.first_name} {r.last_name}</span>
+                        {r.nickname && <span className="text-[11px] text-gray-400">({r.nickname})</span>}
+                        <span className="badge badge-purple text-[10px]">{typeTxt}</span>
+                        <span className="text-[11px] tabular-nums text-gray-500">
+                          · {dayjs(r.date).format('D MMM YY')}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-gray-600 mt-1 tabular-nums">
+                        {r.check_in_time && <>เข้า {String(r.check_in_time).slice(0,5)} </>}
+                        {r.check_out_time && <>· ออก {String(r.check_out_time).slice(0,5)}</>}
+                      </div>
+                      <div className="text-[12px] text-gray-700 mt-1 break-words">{r.reason}</div>
+                    </div>
+                    <div className="flex flex-col gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => onApproveBackdate(r.id)}
+                        className="btn btn-primary text-[11px] px-2 py-1"
+                        title="อนุมัติ"
+                      >
+                        <IconCheck size={12} /> อนุมัติ
+                      </button>
+                      <button
+                        onClick={() => { setRejectingId(r.id); setRejectingKind('backdate'); setRejectReason('') }}
+                        className="btn text-[11px] px-2 py-1 text-red-600 border-red-200 hover:bg-red-50"
+                        title="ปฏิเสธ"
+                      >
+                        <IconX size={12} /> ปฏิเสธ
+                      </button>
+                    </div>
+                  </div>
+                  {rejectingId === r.id && rejectingKind === 'backdate' && (
+                    <div className="mt-2 p-2 rounded-[8px] bg-red-50/60 border border-red-100">
+                      <textarea
+                        className="input text-[11px] min-h-[40px]"
+                        placeholder="เหตุผลที่ปฏิเสธ (ไม่บังคับ)"
+                        value={rejectReason}
+                        onChange={e => setRejectReason(e.target.value)}
+                        autoFocus
+                      />
+                      <div className="flex gap-1.5 mt-1.5">
+                        <button
+                          onClick={() => { onRejectBackdate(r.id, rejectReason); setRejectingId(null); setRejectingKind(null) }}
+                          className="btn text-[11px] text-red-600 border-red-200 hover:bg-red-50"
+                        >
+                          ยืนยันปฏิเสธ
+                        </button>
+                        <button
+                          onClick={() => { setRejectingId(null); setRejectingKind(null); setRejectReason('') }}
+                          className="btn text-[11px]"
+                        >
+                          ยกเลิก
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
@@ -1094,6 +1245,130 @@ function SelfieModal({
               ลองใหม่
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ===== Backdate request modal =====
+   Employee fills in: date (no future), request type (check-in only /
+   check-out only / both), the relevant time(s), and reason. Submits to
+   POST /attendance/backdate-request; HR/owner approves later from the
+   daily-summary card. */
+function BackdateRequestModal({
+  onClose, onSubmitted, onError,
+}: {
+  onClose: () => void
+  onSubmitted: () => void
+  onError: (m: string) => void
+}) {
+  const today = dayjs().format('YYYY-MM-DD')
+  const [date, setDate] = useState(today)
+  const [requestType, setRequestType] = useState<'check_in' | 'check_out' | 'both'>('both')
+  const [checkInTime, setCheckInTime] = useState('09:00')
+  const [checkOutTime, setCheckOutTime] = useState('17:00')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const needsIn  = requestType === 'check_in'  || requestType === 'both'
+  const needsOut = requestType === 'check_out' || requestType === 'both'
+
+  const submit = async () => {
+    if (!reason.trim()) { onError('กรุณาระบุเหตุผล'); return }
+    if (needsIn && !checkInTime) { onError('กรุณาระบุเวลาเข้างาน'); return }
+    if (needsOut && !checkOutTime) { onError('กรุณาระบุเวลาออกงาน'); return }
+    if (needsIn && needsOut && checkOutTime <= checkInTime) {
+      onError('เวลาออกต้องอยู่หลังเวลาเข้า')
+      return
+    }
+    setBusy(true)
+    try {
+      await attendanceApi.submitBackdate({
+        date, requestType,
+        checkInTime:  needsIn  ? checkInTime  : undefined,
+        checkOutTime: needsOut ? checkOutTime : undefined,
+        reason: reason.trim(),
+      })
+      onSubmitted()
+    } catch (e: any) {
+      onError(e.response?.data?.message || 'ส่งคำขอไม่สำเร็จ')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-[14px] shadow-xl w-full max-w-md max-h-[92vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-black/[0.06]">
+          <h2 className="text-base font-semibold text-[#111110]">ขอลงเวลาย้อนหลัง</h2>
+          <button onClick={onClose} className="btn btn-ghost p-1.5" aria-label="ปิด">
+            <IconX size={16} />
+          </button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div>
+            <label className="label">วันที่</label>
+            <input
+              type="date"
+              className="input"
+              max={today}
+              value={date}
+              onChange={e => setDate(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">ประเภทคำขอ</label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {([
+                ['both', 'เข้า+ออก'],
+                ['check_in', 'เข้างาน'],
+                ['check_out', 'ออกงาน'],
+              ] as const).map(([val, txt]) => (
+                <button
+                  key={val}
+                  onClick={() => setRequestType(val)}
+                  className={clsx(
+                    'btn text-xs justify-center py-2',
+                    requestType === val && 'btn-primary'
+                  )}
+                >
+                  {txt}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {needsIn && (
+              <div>
+                <label className="label">เวลาเข้างาน</label>
+                <input type="time" className="input" value={checkInTime} onChange={e => setCheckInTime(e.target.value)} />
+              </div>
+            )}
+            {needsOut && (
+              <div>
+                <label className="label">เวลาออกงาน</label>
+                <input type="time" className="input" value={checkOutTime} onChange={e => setCheckOutTime(e.target.value)} />
+              </div>
+            )}
+          </div>
+          <div>
+            <label className="label">เหตุผล *</label>
+            <textarea
+              className="input min-h-[70px] text-[13px]"
+              placeholder="เช่น ลืมตอกบัตร, เครื่องเสีย, ออกประชุมก่อนปิดงาน..."
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end p-4 border-t border-black/[0.06]">
+          <button onClick={onClose} className="btn text-sm">ยกเลิก</button>
+          <button onClick={submit} disabled={busy || !reason.trim()} className="btn btn-primary text-sm">
+            {busy ? 'กำลังส่ง…' : 'ส่งคำขอ'}
+          </button>
         </div>
       </div>
     </div>

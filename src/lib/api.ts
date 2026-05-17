@@ -81,6 +81,20 @@ export const attendanceApi = {
   approveOffsite: (id: string) => api.post(`/attendance/offsite/${id}/approve`),
   rejectOffsite: (id: string, reason?: string) =>
     api.post(`/attendance/offsite/${id}/reject`, { reason }),
+
+  // Backdated check-in / check-out requests.
+  submitBackdate: (data: {
+    date: string                                     // YYYY-MM-DD
+    requestType: 'check_in' | 'check_out' | 'both'
+    checkInTime?: string                             // HH:MM
+    checkOutTime?: string                            // HH:MM
+    reason: string
+  }) => api.post('/attendance/backdate-request', data),
+  myBackdates: () => api.get('/attendance/backdate-mine'),
+  backdatePending: () => api.get('/attendance/backdate-pending'),
+  approveBackdate: (id: string) => api.post(`/attendance/backdate/${id}/approve`),
+  rejectBackdate: (id: string, reason?: string) =>
+    api.post(`/attendance/backdate/${id}/reject`, { reason }),
 }
 
 // Leave APIs
