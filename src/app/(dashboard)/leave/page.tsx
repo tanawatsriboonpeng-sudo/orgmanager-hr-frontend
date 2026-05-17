@@ -123,6 +123,10 @@ export default function LeavePage() {
   // AdminSetQuotaModal but with the employee + leave-type already chosen
   // (and locked) so the form is one input away from done.
   const [prefillSetQuota, setPrefillSetQuota] = useState<{ employeeId: string; leaveTypeId: string } | null>(null)
+  // Leave-type CRUD modal (previously lived on /settings). Moved here
+  // so HR can add a new column to the team-quota table and see it
+  // reflect immediately without flipping between two pages.
+  const [typesModalOpen, setTypesModalOpen] = useState(false)
   // Doc preview modal — both viewers and HR queue use it.
   const [docPreview, setDocPreview] = useState<string | null>(null)
 
@@ -890,11 +894,20 @@ export default function LeavePage() {
       {canSeePending && (
         <div className="card mt-5">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <h2 className="text-sm font-semibold flex items-center gap-2">
-              <IconUsers size={14} className="text-gray-400" />
-              โควต้าวันลาของทีม
-              <span className="text-[11px] font-normal text-gray-400">({teamRows.length} คน)</span>
-            </h2>
+            <div>
+              <h2 className="text-sm font-semibold flex items-center gap-2">
+                <IconUsers size={14} className="text-gray-400" />
+                โควต้าวันลาของทีม
+                <span className="text-[11px] font-normal text-gray-400">({teamRows.length} คน)</span>
+              </h2>
+              {/* No-carry-over policy. Backend's seedDefaultQuotas
+                  always uses days_per_year + 0 used, never reads the
+                  previous year's remaining. Stating it on the card
+                  prevents HR from expecting accumulation. */}
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                โควตาเริ่มใหม่ทุกต้นปี ไม่ยกไปต่อปีถัดไป
+              </p>
+            </div>
             <div className="flex items-center gap-2 flex-wrap">
               <input
                 type="text"
@@ -904,19 +917,11 @@ export default function LeavePage() {
                 className="input text-xs py-1.5 px-2 w-56"
               />
               <button
-                onClick={() => setSetQuotaOpen(true)}
-                className="btn btn-primary text-xs"
-                title="ปรับโควตาของพนักงานคนใดก็ได้ — ใช้ได้ทุกเมื่อ"
-              >
-                <IconEdit size={13} /> ปรับโควตา
-              </button>
-              <button
-                onClick={seedTeamQuotas}
-                disabled={seedingQuotas}
+                onClick={() => setTypesModalOpen(true)}
                 className="btn text-xs"
-                title="สร้างโควตาเริ่มต้นของปีนี้ให้พนักงานทุกคน (ที่ยังไม่มี)"
+                title="เพิ่ม/แก้/ลบประเภทการลา — column ในตารางจะอัปเดตทันที"
               >
-                <IconPlus size={13} /> {seedingQuotas ? 'กำลังสร้าง…' : 'สร้างโควตาให้ทุกคน'}
+                <IconPlus size={13} /> ประเภทการลา
               </button>
               <button
                 onClick={exportTeamCSV}
@@ -1200,6 +1205,19 @@ export default function LeavePage() {
             loadTeamQuotas(teamYear)
           }}
           onError={(text) => flash(text, false)}
+        />
+      )}
+      {typesModalOpen && (
+        <LeaveTypesManagerModal
+          onClose={() => setTypesModalOpen(false)}
+          onChanged={() => {
+            // Re-fetch types so the team table's columns reflect
+            // the new/removed type immediately, plus re-fetch quotas
+            // because a newly-active type triggers auto-seed on
+            // the next /all-quotas GET.
+            load()
+            loadTeamQuotas(teamYear)
+          }}
         />
       )}
       {docPreview && (
@@ -1671,6 +1689,255 @@ function AdminSetQuotaModal({ year, onClose, onSaved, onError, initial }: {
             {saving ? 'กำลังบันทึก…' : 'บันทึก'}
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// LEAVE TYPES MANAGER MODAL  (moved here from /settings)
+// ============================================================
+// Combines the previous LeaveTypesCard + LeaveTypeForm into a single
+// modal so HR can add/edit/delete a leave type without leaving the
+// /leave page. Carry-over-days field intentionally removed — the
+// system policy is "fresh quotas every year, no rollover" and the
+// backend never reads carry_over_days, so the field would only
+// confuse HR.
+const ADVANCE_NOTICE_PRESETS = [0, 1, 3, 7, 14, 30]
+
+function LeaveTypesManagerModal({ onClose, onChanged }: {
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const [rows, setRows] = useState<LeaveType[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState<string | 'new' | null>(null)
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const r = await leaveApi.allTypes()
+      setRows(r.data.data || [])
+    } catch (e: any) {
+      setMsg({ text: e?.response?.data?.message || 'โหลดประเภทการลาไม่สำเร็จ', ok: false })
+    } finally { setLoading(false) }
+  }
+  useEffect(() => { load() }, [])
+
+  useEffect(() => {
+    if (!msg || !msg.ok) return
+    const t = setTimeout(() => setMsg(null), 3500)
+    return () => clearTimeout(t)
+  }, [msg])
+
+  const toggle = async (lt: LeaveType) => {
+    try {
+      await leaveApi.updateType(lt.id, { isActive: !lt.is_active })
+      load(); onChanged()
+    } catch (e: any) {
+      setMsg({ text: e?.response?.data?.message || 'เปลี่ยนสถานะไม่สำเร็จ', ok: false })
+    }
+  }
+
+  const remove = async (lt: LeaveType) => {
+    if (!confirm(`ลบประเภท "${lt.name}"? ถ้ามีคำขอเดิม ระบบจะปิดใช้งานแทน`)) return
+    try {
+      const r = await leaveApi.deleteType(lt.id)
+      setMsg({ text: r.data.message, ok: true })
+      load(); onChanged()
+    } catch (e: any) {
+      setMsg({ text: e?.response?.data?.message || 'ลบไม่สำเร็จ', ok: false })
+    }
+  }
+
+  return (
+    <div onClick={onClose} className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-[14px] shadow-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
+        <div className="px-5 py-4 border-b border-black/[0.06] flex items-center justify-between sticky top-0 bg-white">
+          <h3 className="text-base font-semibold flex items-center gap-2">
+            <IconCalendarOff size={16} className="text-[#1D9E75]" />
+            ประเภทการลา
+          </h3>
+          <div className="flex items-center gap-2">
+            {editing !== 'new' && (
+              <button onClick={() => setEditing('new')} className="btn btn-primary text-xs">
+                <IconPlus size={13} /> เพิ่มประเภท
+              </button>
+            )}
+            <button onClick={onClose} className="p-1 rounded hover:bg-gray-100" aria-label="ปิด">
+              <IconX size={18} />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-5">
+          <p className="text-xs text-gray-500 mb-3">
+            ตั้งจำนวนวัน/ปี (default ของพนักงานทุกคน), วันยื่นล่วงหน้า, และบังคับแนบหลักฐาน —
+            โควตาของพนักงานแต่ละคนปรับได้จากตารางในหน้านี้โดยตรง
+          </p>
+
+          {msg && (
+            <div className={clsx(
+              'mb-3 px-3 py-2 rounded-md text-xs flex items-center justify-between border',
+              msg.ok ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
+            )}>
+              <span>{msg.text}</span>
+              <button onClick={() => setMsg(null)} className="opacity-70 hover:opacity-100">ปิด</button>
+            </div>
+          )}
+
+          {editing === 'new' && (
+            <LeaveTypeForm
+              onCancel={() => setEditing(null)}
+              onSaved={() => { setEditing(null); setMsg({ text: 'เพิ่มประเภทแล้ว', ok: true }); load(); onChanged() }}
+              onError={(text) => setMsg({ text, ok: false })}
+            />
+          )}
+
+          {loading ? (
+            <p className="text-xs text-gray-500 mt-2">กำลังโหลด…</p>
+          ) : rows.length === 0 && editing !== 'new' ? (
+            <p className="text-xs text-gray-500 text-center py-4">
+              ยังไม่มีประเภทการลา — กด "เพิ่มประเภท" เพื่อเริ่ม
+            </p>
+          ) : (
+            <div className="space-y-2 mt-2">
+              {rows.map(lt => (
+                editing === lt.id ? (
+                  <LeaveTypeForm
+                    key={lt.id}
+                    initial={lt}
+                    onCancel={() => setEditing(null)}
+                    onSaved={() => { setEditing(null); setMsg({ text: 'บันทึกแล้ว', ok: true }); load(); onChanged() }}
+                    onError={(text) => setMsg({ text, ok: false })}
+                  />
+                ) : (
+                  <div
+                    key={lt.id}
+                    className={clsx(
+                      'flex items-center justify-between gap-3 px-3 py-2.5 rounded-md border',
+                      lt.is_active ? 'border-black/[0.06] bg-white' : 'border-black/[0.04] bg-gray-50 opacity-60'
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium text-[#111110]">{lt.name}</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{lt.code}</span>
+                        {lt.requires_document && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 inline-flex items-center gap-1">
+                            <IconFileText size={10} /> ต้องแนบหลักฐาน
+                          </span>
+                        )}
+                        {!lt.is_active && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">ปิดใช้งาน</span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        {lt.days_per_year ?? 0} วัน/ปี ·
+                        {(lt.advance_notice_days ?? 1) === 0
+                          ? ' ยื่นวันเดียวกันได้'
+                          : ` ล่วงหน้า ${lt.advance_notice_days ?? 1} วัน`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => toggle(lt)}
+                        className="text-[11px] px-2 py-1 rounded border border-black/[0.08] hover:bg-gray-50"
+                      >
+                        {lt.is_active ? 'ปิด' : 'เปิด'}
+                      </button>
+                      <button onClick={() => setEditing(lt.id)} className="p-1.5 rounded hover:bg-gray-100" title="แก้ไข">
+                        <IconEdit size={14} className="text-gray-500" />
+                      </button>
+                      <button onClick={() => remove(lt)} className="p-1.5 rounded hover:bg-red-50" title="ลบ">
+                        <IconTrash size={14} className="text-red-500" />
+                      </button>
+                    </div>
+                  </div>
+                )
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Embedded form for both add-new and edit-existing paths. The
+// carry-over-days field is intentionally omitted — backend ignores it.
+function LeaveTypeForm({ initial, onCancel, onSaved, onError }: {
+  initial?: LeaveType
+  onCancel: () => void
+  onSaved: () => void
+  onError: (text: string) => void
+}) {
+  const [name, setName] = useState(initial?.name || '')
+  const [code, setCode] = useState(initial?.code || '')
+  const [daysPerYear, setDaysPerYear] = useState<number>(initial?.days_per_year ?? 6)
+  const [advanceNoticeDays, setAdvanceNoticeDays] = useState<number>(initial?.advance_notice_days ?? 1)
+  const [requiresDocument, setRequiresDocument] = useState<boolean>(initial?.requires_document ?? false)
+  const [saving, setSaving] = useState(false)
+
+  const submit = async () => {
+    if (!name.trim()) { onError('กรุณาระบุชื่อประเภท'); return }
+    if (!code.trim()) { onError('กรุณาระบุรหัสประเภท (เช่น SICK, VACATION)'); return }
+    setSaving(true)
+    try {
+      const payload = {
+        name: name.trim(),
+        code: code.trim().toUpperCase(),
+        daysPerYear,
+        advanceNoticeDays,
+        requiresDocument,
+      }
+      if (initial) await leaveApi.updateType(initial.id, payload)
+      else await leaveApi.createType(payload)
+      onSaved()
+    } catch (e: any) {
+      onError(e?.response?.data?.message || 'บันทึกไม่สำเร็จ')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="rounded-md border border-[#1D9E75]/30 bg-green-50/20 p-3 space-y-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="sm:col-span-2">
+          <label className="label">ชื่อประเภท</label>
+          <input className="input text-sm" placeholder="ลาป่วย / ลาพักร้อน / ลากิจ" value={name} onChange={e => setName(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">รหัส (ภาษาอังกฤษ)</label>
+          <input className="input text-sm font-mono uppercase" placeholder="SICK / VAC / PERSONAL"
+            value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={20} />
+        </div>
+        <div>
+          <label className="label">จำนวนวัน/ปี (default)</label>
+          <input className="input text-sm" type="number" min={0} max={365}
+            value={daysPerYear} onChange={e => setDaysPerYear(parseInt(e.target.value, 10) || 0)} />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="label">ยื่นล่วงหน้า (วัน)</label>
+          <select className="input text-sm" value={advanceNoticeDays}
+            onChange={e => setAdvanceNoticeDays(parseInt(e.target.value, 10))}>
+            {ADVANCE_NOTICE_PRESETS.map(d => (
+              <option key={d} value={d}>{d === 0 ? '0 (ยื่นวันเดียวกันได้)' : `${d} วัน`}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <label className="flex items-center gap-2 cursor-pointer text-sm">
+        <input type="checkbox" checked={requiresDocument} onChange={e => setRequiresDocument(e.target.checked)} className="accent-[#1D9E75]" />
+        <span>ต้องแนบหลักฐาน (เช่น ใบรับรองแพทย์)</span>
+      </label>
+
+      <div className="flex justify-end gap-2 pt-1">
+        <button onClick={onCancel} className="btn text-sm">ยกเลิก</button>
+        <button onClick={submit} disabled={saving} className="btn btn-primary text-sm">
+          {saving ? 'กำลังบันทึก…' : initial ? 'บันทึก' : 'เพิ่ม'}
+        </button>
       </div>
     </div>
   )
