@@ -215,6 +215,13 @@ export const leaveApi = {
   // for the (employee × type × year) tuple.
   setQuota: (body: { employeeId: string; leaveTypeId: string; year: number; totalDays: number }) =>
     api.put('/leave/quotas', body),
+  // One-click seed: creates quota rows for every (active employee × active
+  // type) for the given year using each type's days_per_year. Skips rows
+  // that already exist so it's safe to re-run.
+  seedDefaultQuotas: (year?: number) =>
+    api.post<{ success: boolean; data: { year: number; created: number }; message: string }>(
+      '/leave/quotas/seed-defaults', { year }
+    ),
 
   myHistory: () => api.get('/leave/my-history'),
   // HR/owner organization-wide leave request feed. All filters optional.

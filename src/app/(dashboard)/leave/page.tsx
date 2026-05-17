@@ -143,6 +143,24 @@ export default function LeavePage() {
     if (r) setTeamQuotas(r.data.data || [])
   }
 
+  // Seed default quotas for everyone in the picked year — fills the
+  // table on first use so HR doesn't have to wait for every employee
+  // to log in. Safe to re-run; the backend skips rows that already
+  // exist via ON CONFLICT.
+  const [seedingQuotas, setSeedingQuotas] = useState(false)
+  const seedTeamQuotas = async () => {
+    if (seedingQuotas) return
+    if (!confirm(`สร้างโควตาเริ่มต้นของปี ${teamYear + 543} ให้พนักงานทุกคน? (ที่มีอยู่แล้วจะไม่ถูกแตะ)`)) return
+    setSeedingQuotas(true)
+    try {
+      const r = await leaveApi.seedDefaultQuotas(teamYear)
+      flash(r.data.message)
+      loadTeamQuotas(teamYear)
+    } catch (e: any) {
+      flash(e?.response?.data?.message || 'สร้างไม่สำเร็จ', false)
+    } finally { setSeedingQuotas(false) }
+  }
+
   // useAuthStore.user populates async via fetchMe — on the first render
   // role is undefined, so isOwner/canSeePending are both false. We have
   // to re-run load() once those resolve or HR/owner never see the
@@ -780,8 +798,16 @@ export default function LeavePage() {
               โควต้าวันลาของทีม
               <span className="text-[11px] font-normal text-gray-400">({teamRows.length} คน)</span>
             </h2>
-            <div className="flex items-center gap-2">
-              <label className="text-[11px] text-gray-500">ปี</label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={seedTeamQuotas}
+                disabled={seedingQuotas}
+                className="btn text-xs"
+                title="สร้างโควตาเริ่มต้นของปีนี้ให้พนักงานทุกคน (ที่ยังไม่มี)"
+              >
+                <IconPlus size={13} /> {seedingQuotas ? 'กำลังสร้าง…' : 'สร้างโควตาให้ทุกคน'}
+              </button>
+              <label className="text-[11px] text-gray-500 ml-2">ปี</label>
               <select
                 className="input text-xs py-1 px-2"
                 value={teamYear}
@@ -796,12 +822,19 @@ export default function LeavePage() {
           </div>
 
           {teamRows.length === 0 ? (
-            <p className="text-xs text-gray-400 py-8 text-center">
-              ยังไม่มีข้อมูลโควต้าในปี {teamYear + 543}
-              <span className="block text-[11px] text-gray-400 mt-1">
-                โควต้าจะถูกสร้างเมื่อพนักงานเปิดหน้าการลาครั้งแรกในปีนั้น
-              </span>
-            </p>
+            <div className="py-8 text-center">
+              <p className="text-sm text-gray-500 mb-1">ยังไม่มีโควตาในปี {teamYear + 543}</p>
+              <p className="text-[11px] text-gray-400 mb-4">
+                ใช้ค่า default จากการ์ด "ประเภทการลา" — กดปุ่มเพื่อสร้างให้ทุกคนทันที
+              </p>
+              <button
+                onClick={seedTeamQuotas}
+                disabled={seedingQuotas}
+                className="btn btn-primary text-sm"
+              >
+                <IconPlus size={14} /> {seedingQuotas ? 'กำลังสร้าง…' : `สร้างโควตาเริ่มต้นปี ${teamYear + 543}`}
+              </button>
+            </div>
           ) : (
             <div className="overflow-x-auto -mx-4 px-4">
               <table className="w-full text-sm">
