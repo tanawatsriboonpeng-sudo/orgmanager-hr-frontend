@@ -376,10 +376,9 @@ function DayPanel({
                 <span className="w-2 h-2 rounded-full bg-red-500" />
                 วันหยุด
               </div>
+              {/* Type sub-label dropped per UX decision — every
+                  holiday in the system is treated the same now. */}
               <div className="text-sm font-medium text-[#111110] mt-1">{h.name}</div>
-              <div className="text-[10px] text-gray-500 mt-0.5">
-                {h.type === 'religious' ? 'วันสำคัญทางศาสนา' : h.type === 'company' ? 'วันหยุดบริษัท' : 'วันหยุดราชการ'}
-              </div>
             </div>
           ))}
 

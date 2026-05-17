@@ -1258,6 +1258,10 @@ function HolidaysCard() {
 
       {adding && (
         <div className="mb-3 p-3 border border-[#1D9E75]/20 bg-[#E1F5EE]/30 rounded-[10px] space-y-3">
+          {/* Type picker removed — every entry here is a legal/
+              traditional company holiday per product decision. The
+              backend still stores `type='national'` so existing
+              queries that group/filter by type keep working. */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div className="sm:col-span-2">
               <label className="label">ชื่อวันหยุด *</label>
@@ -1270,18 +1274,6 @@ function HolidaysCard() {
               />
             </div>
             <div>
-              <label className="label">ประเภท</label>
-              <select
-                className="input text-sm"
-                value={form.type}
-                onChange={e => setForm(p => ({ ...p, type: e.target.value as Holiday['type'] }))}
-              >
-                <option value="national">วันหยุดราชการ</option>
-                <option value="religious">วันสำคัญทางศาสนา</option>
-                <option value="company">วันหยุดบริษัท</option>
-              </select>
-            </div>
-            <div className="sm:col-span-3">
               <label className="label">วันที่ *</label>
               <input
                 type="date"
@@ -1336,12 +1328,9 @@ function HolidaysCard() {
                       </div>
                     </div>
                     <div className="flex-1 min-w-0">
+                      {/* Type sub-label dropped per UX decision —
+                          every holiday here is treated the same. */}
                       <div className="text-sm text-[#111110] truncate">{h.name}</div>
-                      <div className="text-[10px] text-gray-400">
-                        {h.type === 'religious' ? 'วันสำคัญทางศาสนา'
-                          : h.type === 'company' ? 'วันหยุดบริษัท'
-                          : 'วันหยุดราชการ'}
-                      </div>
                     </div>
                     <button
                       onClick={() => remove(h)}
