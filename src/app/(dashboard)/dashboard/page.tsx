@@ -35,6 +35,18 @@ function StatCard({ label, value, sub, color, icon: Icon }: {
   )
 }
 
+// Compact colored-number cell used inside the attendance-overview card.
+// Same shape as the Stat used on /attendance so the visual language
+// stays consistent across the two surfaces.
+function DashStat({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="text-center px-2 py-3 rounded-[10px] bg-white border border-black/[0.05]">
+      <div className="text-xl font-semibold tabular-nums" style={{ color }}>{value}</div>
+      <div className="text-[11px] text-gray-500 mt-0.5">{label}</div>
+    </div>
+  )
+}
+
 // ─── Section Header ───────────────────────────────────────────────────────────
 function SectionHeader({ title, href }: { title: string; href?: string }) {
   return (
@@ -197,13 +209,46 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Stats grid (HR/Owner) */}
+      {/* Rich attendance overview for HR/owner. Was a 4-card slim grid
+          that mostly showed zeros and felt empty — replaced with the
+          same 6-bucket layout the /attendance daily summary uses so
+          the landing page surfaces the same level of detail without
+          forcing a navigation. "ดูเพิ่มเติม" links to /attendance for
+          per-record list + approval queues. */}
       {isHROrOwner && summary && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          <StatCard label="มาทำงาน" value={summary.summary.present} sub={`${summary.summary.attendanceRate}%`} color="#1D9E75" icon={IconUsers} />
-          <StatCard label="มาสาย" value={summary.summary.late} sub="คน" color="#BA7517" icon={IconAlertTriangle} />
-          <StatCard label="ลางาน" value={summary.summary.leave} sub="อนุมัติแล้ว" color="#534AB7" icon={IconCalendarOff} />
-          <StatCard label="ขาดงาน" value={summary.summary.absent} sub="ไม่มีการเช็คอิน" color="#E24B4A" icon={IconAlertTriangle} />
+        <div className="card mb-6"
+          style={{ background: 'linear-gradient(135deg, #FFFFFF 0%, #F0F8F4 100%)' }}>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 className="text-sm font-semibold text-[#111110] flex items-center gap-2">
+              <IconUsers size={14} className="text-[#1D9E75]" />
+              ภาพรวมการลงเวลาวันนี้
+            </h2>
+            <Link href="/attendance" className="text-xs text-[#1D9E75] hover:underline flex items-center gap-1">
+              จัดการลงเวลา <IconArrowRight size={12} />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            <DashStat label="ทั้งหมด"   value={summary.summary.total ?? 0} color="#6B6A66" />
+            <DashStat label="ตรงเวลา"   value={Math.max(0, (summary.summary.present ?? 0) - (summary.summary.almostLate ?? 0))} color="#1D9E75" />
+            <DashStat label="เกือบสาย"  value={summary.summary.almostLate ?? 0} color="#D9914A" />
+            <DashStat label="มาสาย"     value={summary.summary.late ?? 0} color="#BA7517" />
+            <DashStat label="ยังไม่เข้า" value={summary.summary.notCheckedIn ?? 0} color="#E24B4A" />
+            <DashStat label="ลา"        value={summary.summary.leave ?? 0} color="#534AB7" />
+          </div>
+
+          {summary.summary.total > 0 && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1">
+                <span>อัตราการเข้างาน</span>
+                <span className="font-medium text-[#085041] tabular-nums">{summary.summary.attendanceRate ?? 0}%</span>
+              </div>
+              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full bg-[#1D9E75] rounded-full transition-all"
+                  style={{ width: `${Math.min(100, summary.summary.attendanceRate || 0)}%` }} />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
