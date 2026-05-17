@@ -1246,9 +1246,11 @@ function LeaveTypesCard() {
                     )}
                   </div>
                   <p className="text-[11px] text-gray-500 mt-0.5">
-                    {lt.days_per_year} วัน/ปี ·
-                    {lt.advance_notice_days === 0 ? ' ยื่นวันเดียวกันได้' : ` ล่วงหน้า ${lt.advance_notice_days} วัน`}
-                    {lt.carry_over_days > 0 ? ` · ยกยอด ${lt.carry_over_days} วัน` : ''}
+                    {lt.days_per_year ?? 0} วัน/ปี ·
+                    {(lt.advance_notice_days ?? 1) === 0
+                      ? ' ยื่นวันเดียวกันได้'
+                      : ` ล่วงหน้า ${lt.advance_notice_days ?? 1} วัน`}
+                    {(lt.carry_over_days ?? 0) > 0 ? ` · ยกยอด ${lt.carry_over_days} วัน` : ''}
                   </p>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
