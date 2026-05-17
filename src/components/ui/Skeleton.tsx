@@ -10,8 +10,8 @@
 
 import clsx from 'clsx'
 
-export function Skeleton({ className }: { className?: string }) {
-  return <div className={clsx('skeleton', className)} aria-hidden="true" />
+export function Skeleton({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return <div className={clsx('skeleton', className)} style={style} aria-hidden="true" />
 }
 
 // Lines vary slightly in width so it doesn't look like a barcode.

@@ -155,10 +155,13 @@ export default function LeavePage() {
   // table on first use so HR doesn't have to wait for every employee
   // to log in. Safe to re-run; the backend skips rows that already
   // exist via ON CONFLICT.
+  // The seed is idempotent (backend uses ON CONFLICT DO NOTHING) so we
+  // skip the JS confirm() — it adds friction without buying safety, and
+  // a blocking native dialog stalls our automation harness. The button
+  // label + toast feedback are enough.
   const [seedingQuotas, setSeedingQuotas] = useState(false)
   const seedTeamQuotas = async () => {
     if (seedingQuotas) return
-    if (!confirm(`สร้างโควตาเริ่มต้นของปี ${teamYear + 543} ให้พนักงานทุกคน? (ที่มีอยู่แล้วจะไม่ถูกแตะ)`)) return
     setSeedingQuotas(true)
     try {
       const r = await leaveApi.seedDefaultQuotas(teamYear)

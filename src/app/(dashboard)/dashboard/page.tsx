@@ -8,13 +8,26 @@ import {
 import {
   IconUsers, IconClockCheck, IconCalendarOff, IconClockPlus,
   IconTrendingUp, IconAlertTriangle, IconBell, IconArrowRight,
-  IconCheck, IconClock, IconMapPin, IconX,
+  IconCheck, IconClock, IconMapPin, IconX, IconSparkles,
+  IconSpeakerphone, IconChartBar,
 } from '@tabler/icons-react'
 import Link from 'next/link'
 import clsx from 'clsx'
 import dayjs from 'dayjs'
 import 'dayjs/locale/th'
+import { SkeletonCard, SkeletonRow, Skeleton } from '@/components/ui/Skeleton'
+import EmptyState from '@/components/ui/EmptyState'
 dayjs.locale('th')
+
+// Returns "เช้านี้" / "บ่ายนี้" / "ค่ำนี้" based on current hour — used
+// in the greeting so the page feels less robotic. Mirrors the
+// time-aware greetings macOS / iOS use.
+function greetingForHour(): string {
+  const h = new Date().getHours()
+  if (h < 12) return 'อรุณสวัสดิ์'
+  if (h < 17) return 'สวัสดีตอนบ่าย'
+  return 'สวัสดีตอนเย็น'
+}
 
 // ─── Stat Card ───────────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, color, icon: Icon }: {
@@ -219,21 +232,42 @@ export default function DashboardPage() {
   const unreadCount = announcements.filter(a => !a.is_read).length
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-[#111110]">
-            สวัสดี{user?.role === 'owner' ? 'คุณ' : ''} {user?.firstName} 👋
-          </h1>
-          <p className="text-sm text-gray-500 mt-0.5">{today}</p>
-        </div>
-        {unreadCount > 0 && (
-          <div className="flex items-center gap-2 bg-[#FAEEDA] text-[#633806] px-3 py-1.5 rounded-full text-xs font-medium">
-            <IconBell size={13} />
-            ประกาศใหม่ {unreadCount} รายการ
+    <div className="p-6 max-w-6xl mx-auto animate-fade-in">
+      {/* Hero header — gradient panel with greeting + date + unread chip.
+          Replaces the plain text header so the dashboard reads as a
+          landing page rather than a sea of cards. The radial accent
+          mirrors the brand green without overwhelming the content
+          below it. */}
+      <div
+        className="mb-6 relative overflow-hidden rounded-[16px] px-5 py-5 border border-[#1D9E75]/15"
+        style={{
+          background:
+            'radial-gradient(circle at 100% 0%, rgba(29,158,117,0.10), transparent 50%),' +
+            'linear-gradient(135deg, #FFFFFF 0%, #F4FAF7 100%)',
+        }}
+      >
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[11px] font-medium text-[#0F6E56] uppercase tracking-wide mb-1">
+              <IconSparkles size={12} />
+              {greetingForHour()}
+            </div>
+            <h1 className="text-2xl font-semibold text-[#111110] leading-tight">
+              {user?.role === 'owner' ? 'คุณ' : ''}{user?.firstName}
+            </h1>
+            <p className="text-xs text-gray-500 mt-1">{today}</p>
           </div>
-        )}
+          {unreadCount > 0 && (
+            <Link
+              href="/announcements"
+              className="flex items-center gap-2 bg-white border border-[#FAEEDA] text-[#633806] px-3 py-1.5 rounded-full text-xs font-medium shadow-sm hover:shadow-md transition-shadow"
+            >
+              <IconBell size={13} />
+              ประกาศใหม่ {unreadCount} รายการ
+              <IconArrowRight size={11} className="opacity-60" />
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Check-in status (employee) */}
@@ -483,10 +517,25 @@ export default function DashboardPage() {
         {isHROrOwner && (
           <div className="card lg:col-span-2">
             <SectionHeader title="การมาทำงาน 5 วันทำการล่าสุด" href="/attendance" />
-            {chartRows.length === 0 || chartRows.every(r => !r.present && !r.late && !r.absent) ? (
-              <div className="h-[180px] flex items-center justify-center text-xs text-gray-400">
-                {loading ? 'กำลังโหลด…' : 'ยังไม่มีข้อมูลการลงเวลาในช่วงนี้'}
+            {loading ? (
+              <div className="h-[180px] flex items-end gap-2 px-2">
+                {/* Bar-graph-shaped skeletons so the layout doesn't
+                    jump when real bars render. */}
+                {[60, 80, 45, 70, 55].map((h, i) => (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    <Skeleton className="w-full" style={{ height: `${h}%` }} />
+                    <Skeleton className="w-8 h-2" />
+                  </div>
+                ))}
               </div>
+            ) : chartRows.length === 0 || chartRows.every(r => !r.present && !r.late && !r.absent) ? (
+              <EmptyState
+                icon={IconChartBar}
+                title="ยังไม่มีข้อมูลการลงเวลา"
+                description="พอพนักงานเริ่มเช็คอินกราฟจะขึ้นที่นี่"
+                size="compact"
+                tone="gray"
+              />
             ) : (
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={chartRows} barSize={14} barGap={3}>
@@ -540,18 +589,32 @@ export default function DashboardPage() {
         {role === 'employee' && leaveQuota.length === 0 && !loading && (
           <div className="card">
             <SectionHeader title="วันลาคงเหลือ" href="/leave" />
-            <div className="text-center py-6 text-xs text-gray-400">
-              ยังไม่ได้ตั้งค่าโควตาวันลา
-              <div className="text-[11px] text-gray-400 mt-1">ติดต่อ HR เพื่อขอเปิดโควตา</div>
-            </div>
+            <EmptyState
+              icon={IconCalendarOff}
+              title="ยังไม่ได้ตั้งค่าโควตา"
+              description="ติดต่อ HR เพื่อขอเปิดโควตาวันลาประจำปี"
+              size="compact"
+              tone="gray"
+            />
           </div>
         )}
 
         {/* Announcements */}
         <div className={clsx('card', isHROrOwner ? 'lg:col-span-1' : 'lg:col-span-2')}>
           <SectionHeader title="ประกาศ" href="/announcements" />
-          {announcements.length === 0 ? (
-            <div className="text-center py-6 text-gray-400 text-sm">ไม่มีประกาศ</div>
+          {loading ? (
+            <div className="space-y-2">
+              <SkeletonRow />
+              <SkeletonRow />
+            </div>
+          ) : announcements.length === 0 ? (
+            <EmptyState
+              icon={IconMegaphone}
+              title="ยังไม่มีประกาศ"
+              description="ประกาศใหม่จากบริษัทจะแสดงที่นี่"
+              size="compact"
+              tone="gray"
+            />
           ) : (
             <div className="space-y-2">
               {announcements.slice(0, 3).map((a: any) => (
@@ -577,11 +640,18 @@ export default function DashboardPage() {
             ]
               .filter(a => !role || (a.roles as readonly string[]).includes(role))
               .map(({ href, icon: Icon, label, color, bg }) => (
-                <Link key={href} href={href} className="flex flex-col items-center gap-2 p-3 rounded-[10px] border border-black/[0.05] hover:border-black/[0.1] hover:bg-gray-50/80 transition-all text-center">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: bg }}>
-                    <Icon size={16} style={{ color }} />
+                <Link
+                  key={href}
+                  href={href}
+                  className="group flex flex-col items-center gap-2 p-3 rounded-[12px] border border-black/[0.05] hover:border-black/[0.12] hover:bg-gray-50/60 hover:-translate-y-0.5 hover:shadow-sm transition-all duration-200 text-center"
+                >
+                  <div
+                    className="w-9 h-9 rounded-[10px] flex items-center justify-center transition-transform duration-200 group-hover:scale-110"
+                    style={{ background: bg }}
+                  >
+                    <Icon size={17} style={{ color }} />
                   </div>
-                  <span className="text-xs text-gray-600 font-medium">{label}</span>
+                  <span className="text-xs text-gray-700 font-medium">{label}</span>
                 </Link>
               ))}
           </div>

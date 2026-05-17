@@ -82,21 +82,27 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Mobile top bar - แสดงเฉพาะมือถือ */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-white border-b border-black/[0.06] flex items-center justify-between px-4 z-40">
+      {/* Mobile top bar — sticky bell + hamburger so notifications are
+          always one tap away even when the drawer is closed. Backdrop-
+          blur gives a softer, more app-like feel under the status bar
+          when running in LIFF webview. */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-white/85 backdrop-blur-md border-b border-black/[0.06] flex items-center justify-between px-4 z-40">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-[#1D9E75] rounded-lg flex items-center justify-center">
+          <div className="w-7 h-7 bg-[#1D9E75] rounded-lg flex items-center justify-center shadow-sm">
             <IconBuilding size={15} className="text-white" />
           </div>
           <div className="text-[13px] font-semibold text-[#111110]">สิริคอนส์ HR</div>
         </div>
-        <button
-          onClick={() => setOpen(true)}
-          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100"
-          aria-label="เปิดเมนู"
-        >
-          <IconMenu2 size={22} className="text-gray-700" />
-        </button>
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          <button
+            onClick={() => setOpen(true)}
+            className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100 active:scale-95 transition-transform"
+            aria-label="เปิดเมนู"
+          >
+            <IconMenu2 size={22} className="text-gray-700" />
+          </button>
+        </div>
       </div>
 
       {/* Spacer ดันเนื้อหาลงให้พ้น top bar บนมือถือ */}
@@ -122,17 +128,20 @@ export default function Sidebar() {
         {/* Logo + ปุ่มปิด (มือถือ) */}
         <div className="flex items-center justify-between gap-2.5 px-4 py-4 border-b border-black/[0.06]">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 bg-[#1D9E75] rounded-lg flex items-center justify-center">
-              <IconBuilding size={15} className="text-white" />
+            <div
+              className="w-8 h-8 rounded-[10px] flex items-center justify-center shadow-sm"
+              style={{ background: 'linear-gradient(135deg, #1D9E75 0%, #0F6E56 100%)' }}
+            >
+              <IconBuilding size={16} className="text-white" />
             </div>
             <div>
-              <div className="text-[12px] font-semibold text-[#111110] leading-tight">สิริคอนส์</div>
+              <div className="text-[13px] font-semibold text-[#111110] leading-tight">สิริคอนส์</div>
               <div className="text-[10px] text-gray-400">HR System</div>
             </div>
           </div>
           <button
             onClick={() => setOpen(false)}
-            className="lg:hidden w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100"
+            className="lg:hidden w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 active:scale-95 transition-transform"
             aria-label="ปิดเมนู"
           >
             <IconX size={18} className="text-gray-500" />
@@ -166,12 +175,16 @@ export default function Sidebar() {
                 key={item.href}
                 href={item.href}
                 className={clsx(
-                  'flex items-center gap-2.5 px-3 py-2 rounded-[9px] text-sm mb-0.5 group transition-all',
+                  'relative flex items-center gap-2.5 px-3 py-2 rounded-[9px] text-sm mb-0.5 transition-all duration-150',
                   isActive
-                    ? 'bg-[#E1F5EE] text-[#085041] font-medium'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    ? 'bg-gradient-to-r from-[#E1F5EE] to-[#E1F5EE]/60 text-[#085041] font-medium shadow-[inset_0_0_0_1px_rgba(29,158,117,0.12)]'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 hover:translate-x-0.5'
                 )}
               >
+                {/* Active indicator — vertical bar on the left edge */}
+                {isActive && (
+                  <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-[#1D9E75] rounded-full" />
+                )}
                 <Icon
                   size={16}
                   className="flex-shrink-0"
