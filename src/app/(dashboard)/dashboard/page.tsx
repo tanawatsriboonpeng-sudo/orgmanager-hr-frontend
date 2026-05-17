@@ -8,7 +8,7 @@ import {
 import {
   IconUsers, IconClockCheck, IconCalendarOff, IconClockPlus,
   IconTrendingUp, IconAlertTriangle, IconBell, IconArrowRight,
-  IconCheck, IconClock
+  IconCheck, IconClock, IconMapPin, IconX,
 } from '@tabler/icons-react'
 import Link from 'next/link'
 import clsx from 'clsx'
@@ -109,6 +109,29 @@ export default function DashboardPage() {
   const [announcements, setAnnouncements] = useState<any[]>([])
   const [leaveQuota, setLeaveQuota] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  // HR/owner pending approvals embedded on the dashboard so management
+  // doesn't have to navigate to /attendance just to see what's waiting.
+  const [offsitePending, setOffsitePending] = useState<any[]>([])
+  const [backdatePending, setBackdatePending] = useState<any[]>([])
+  const [actingId, setActingId] = useState<string | null>(null)
+  const [pendingMsg, setPendingMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [rejectingId, setRejectingId] = useState<string | null>(null)
+  const [rejectingKind, setRejectingKind] = useState<'offsite' | 'backdate' | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+
+  const loadHRBundle = async () => {
+    if (!isHROrOwner) return
+    const [sumRes, chartRes, offRes, bdRes] = await Promise.all([
+      attendanceApi.dailySummary().catch(() => null),
+      attendanceApi.recentSummary(5).catch(() => null),
+      attendanceApi.offsitePending().catch(() => null),
+      attendanceApi.backdatePending().catch(() => null),
+    ])
+    if (sumRes) setSummary(sumRes.data.data)
+    if (chartRes) setChartRows(chartRes.data.data || [])
+    if (offRes)  setOffsitePending(offRes.data.data || [])
+    if (bdRes)   setBackdatePending(bdRes.data.data || [])
+  }
 
   useEffect(() => {
     const loadAll = async () => {
@@ -125,21 +148,66 @@ export default function DashboardPage() {
           if (todayRes.status === 'fulfilled') setTodayLog((todayRes.value as any).data.data)
           if (quotaRes.status === 'fulfilled') setLeaveQuota((quotaRes.value as any).data.data || [])
         }
-
-        if (isHROrOwner) {
-          const [sumRes, chartRes] = await Promise.all([
-            attendanceApi.dailySummary().catch(() => null),
-            attendanceApi.recentSummary(5).catch(() => null),
-          ])
-          if (sumRes) setSummary(sumRes.data.data)
-          if (chartRes) setChartRows(chartRes.data.data || [])
-        }
+        await loadHRBundle()
       } finally {
         setLoading(false)
       }
     }
     loadAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOwner, isHROrOwner])
+
+  // Pending-queue mutations refresh both the queue and the daily summary
+  // so the "ทั้งหมด/ยังไม่เข้า/ลา" buckets stay accurate after approval.
+  const approveOffsite = async (id: string) => {
+    setActingId(id)
+    try {
+      await attendanceApi.approveOffsite(id)
+      setPendingMsg({ text: 'อนุมัติแล้ว', ok: true })
+      await loadHRBundle()
+    } catch (e: any) {
+      setPendingMsg({ text: e?.response?.data?.message || 'อนุมัติไม่สำเร็จ', ok: false })
+    } finally { setActingId(null) }
+  }
+  const rejectOffsite = async (id: string, reason: string) => {
+    setActingId(id)
+    try {
+      await attendanceApi.rejectOffsite(id, reason || undefined)
+      setPendingMsg({ text: 'ปฏิเสธแล้ว', ok: true })
+      setRejectingId(null); setRejectingKind(null); setRejectReason('')
+      await loadHRBundle()
+    } catch (e: any) {
+      setPendingMsg({ text: e?.response?.data?.message || 'ปฏิเสธไม่สำเร็จ', ok: false })
+    } finally { setActingId(null) }
+  }
+  const approveBackdate = async (id: string) => {
+    setActingId(id)
+    try {
+      await attendanceApi.approveBackdate(id)
+      setPendingMsg({ text: 'อนุมัติแล้ว', ok: true })
+      await loadHRBundle()
+    } catch (e: any) {
+      setPendingMsg({ text: e?.response?.data?.message || 'อนุมัติไม่สำเร็จ', ok: false })
+    } finally { setActingId(null) }
+  }
+  const rejectBackdate = async (id: string, reason: string) => {
+    setActingId(id)
+    try {
+      await attendanceApi.rejectBackdate(id, reason || undefined)
+      setPendingMsg({ text: 'ปฏิเสธแล้ว', ok: true })
+      setRejectingId(null); setRejectingKind(null); setRejectReason('')
+      await loadHRBundle()
+    } catch (e: any) {
+      setPendingMsg({ text: e?.response?.data?.message || 'ปฏิเสธไม่สำเร็จ', ok: false })
+    } finally { setActingId(null) }
+  }
+
+  // Auto-dismiss success toasts; errors persist until next action.
+  useEffect(() => {
+    if (!pendingMsg || !pendingMsg.ok) return
+    const t = setTimeout(() => setPendingMsg(null), 3500)
+    return () => clearTimeout(t)
+  }, [pendingMsg])
 
   const handleReadAnnouncement = async (id: string) => {
     try {
@@ -211,10 +279,10 @@ export default function DashboardPage() {
 
       {/* Rich attendance overview for HR/owner. Was a 4-card slim grid
           that mostly showed zeros and felt empty — replaced with the
-          same 6-bucket layout the /attendance daily summary uses so
-          the landing page surfaces the same level of detail without
-          forcing a navigation. "ดูเพิ่มเติม" links to /attendance for
-          per-record list + approval queues. */}
+          same 6-bucket layout the /attendance daily summary uses, plus
+          inline approval queues for offsite/backdate requests so the
+          owner doesn't have to navigate over to /attendance just to
+          act on pending items. */}
       {isHROrOwner && summary && (
         <div className="card mb-6"
           style={{ background: 'linear-gradient(135deg, #FFFFFF 0%, #F0F8F4 100%)' }}>
@@ -223,9 +291,14 @@ export default function DashboardPage() {
               <IconUsers size={14} className="text-[#1D9E75]" />
               ภาพรวมการลงเวลาวันนี้
             </h2>
-            <Link href="/attendance" className="text-xs text-[#1D9E75] hover:underline flex items-center gap-1">
-              จัดการลงเวลา <IconArrowRight size={12} />
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link href="/attendance" className="btn text-xs py-1.5" title="ลงเวลาให้พนักงานคนใดก็ได้">
+                <IconClock size={13} /> ลงเวลาให้พนักงาน
+              </Link>
+              <Link href="/attendance" className="text-xs text-[#1D9E75] hover:underline flex items-center gap-1">
+                ดูทั้งหมด <IconArrowRight size={12} />
+              </Link>
+            </div>
           </div>
 
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
@@ -246,6 +319,158 @@ export default function DashboardPage() {
               <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div className="h-full bg-[#1D9E75] rounded-full transition-all"
                   style={{ width: `${Math.min(100, summary.summary.attendanceRate || 0)}%` }} />
+              </div>
+            </div>
+          )}
+
+          {pendingMsg && (
+            <div className={clsx(
+              'mt-3 px-3 py-2 rounded-md text-xs flex items-center justify-between border',
+              pendingMsg.ok ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
+            )}>
+              <span>{pendingMsg.text}</span>
+              <button onClick={() => setPendingMsg(null)} className="opacity-70 hover:opacity-100">ปิด</button>
+            </div>
+          )}
+
+          {/* Pending offsite check-ins. Compact rows: name + time + distance
+              + reason, with inline approve/reject. Rejection reveals a
+              reason textarea right below the row. */}
+          {offsitePending.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-black/[0.05]">
+              <h3 className="text-xs font-semibold text-[#111110] mb-2 flex items-center gap-2">
+                <IconMapPin size={12} className="text-[#BA7517]" />
+                ลงเวลานอกสถานที่รออนุมัติ
+                <span className="text-[10px] font-normal text-gray-400">({offsitePending.length})</span>
+              </h3>
+              <div className="space-y-2">
+                {offsitePending.map(r => (
+                  <div key={r.id} className="rounded-[10px] border border-amber-200 bg-amber-50/30 p-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13px] font-medium text-[#111110]">
+                          {r.first_name} {r.last_name}
+                          <span className="text-[11px] text-gray-500 ml-2 tabular-nums">
+                            · {dayjs(r.check_in_at).format('HH:mm')}
+                          </span>
+                          {r.check_in_distance_m != null && (
+                            <span className="text-[11px] text-gray-400 ml-1">
+                              · ห่าง {(r.check_in_distance_m / 1000).toFixed(1)} กม.
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[12px] text-gray-700 mt-0.5 break-words">{r.offsite_reason}</div>
+                      </div>
+                      <div className="flex flex-col gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => approveOffsite(r.id)}
+                          disabled={actingId === r.id}
+                          className="btn btn-primary text-[11px] px-2 py-1"
+                        >
+                          <IconCheck size={12} /> อนุมัติ
+                        </button>
+                        <button
+                          onClick={() => { setRejectingId(r.id); setRejectingKind('offsite'); setRejectReason('') }}
+                          disabled={actingId === r.id}
+                          className="btn text-[11px] px-2 py-1 text-red-600 border-red-200 hover:bg-red-50"
+                        >
+                          <IconX size={12} /> ปฏิเสธ
+                        </button>
+                      </div>
+                    </div>
+                    {rejectingId === r.id && rejectingKind === 'offsite' && (
+                      <div className="mt-2 p-2 rounded-[8px] bg-red-50/60 border border-red-100">
+                        <textarea
+                          className="input text-[11px] min-h-[40px]"
+                          placeholder="เหตุผลที่ปฏิเสธ (ไม่บังคับ)"
+                          value={rejectReason}
+                          onChange={e => setRejectReason(e.target.value)}
+                          autoFocus
+                        />
+                        <div className="flex gap-1.5 mt-1.5">
+                          <button onClick={() => rejectOffsite(r.id, rejectReason)} className="btn text-[11px] text-red-600 border-red-200 hover:bg-red-50">
+                            ยืนยันปฏิเสธ
+                          </button>
+                          <button onClick={() => { setRejectingId(null); setRejectingKind(null); setRejectReason('') }} className="btn text-[11px]">
+                            ยกเลิก
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pending backdated check-in/check-out. Same layout family as
+              the offsite queue (violet-tinted instead of amber so the
+              two are easy to distinguish at a glance). */}
+          {backdatePending.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-black/[0.05]">
+              <h3 className="text-xs font-semibold text-[#111110] mb-2 flex items-center gap-2">
+                <IconClock size={12} className="text-[#534AB7]" />
+                ลงเวลาย้อนหลังรออนุมัติ
+                <span className="text-[10px] font-normal text-gray-400">({backdatePending.length})</span>
+              </h3>
+              <div className="space-y-2">
+                {backdatePending.map(r => {
+                  const typeTxt = r.request_type === 'both'     ? 'เข้า+ออกงาน'
+                                : r.request_type === 'check_in' ? 'เข้างาน'
+                                :                                  'ออกงาน'
+                  return (
+                    <div key={r.id} className="rounded-[10px] border border-violet-200 bg-violet-50/30 p-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[13px] font-medium text-[#111110]">
+                            {r.first_name} {r.last_name}
+                            <span className="text-[11px] text-gray-500 ml-2">
+                              · {dayjs(r.date).format('D MMM')} {typeTxt}
+                              {r.check_in_time && ` ${r.check_in_time}`}
+                              {r.check_out_time && `–${r.check_out_time}`}
+                            </span>
+                          </div>
+                          <div className="text-[12px] text-gray-700 mt-0.5 break-words">{r.reason}</div>
+                        </div>
+                        <div className="flex flex-col gap-1 flex-shrink-0">
+                          <button
+                            onClick={() => approveBackdate(r.id)}
+                            disabled={actingId === r.id}
+                            className="btn btn-primary text-[11px] px-2 py-1"
+                          >
+                            <IconCheck size={12} /> อนุมัติ
+                          </button>
+                          <button
+                            onClick={() => { setRejectingId(r.id); setRejectingKind('backdate'); setRejectReason('') }}
+                            disabled={actingId === r.id}
+                            className="btn text-[11px] px-2 py-1 text-red-600 border-red-200 hover:bg-red-50"
+                          >
+                            <IconX size={12} /> ปฏิเสธ
+                          </button>
+                        </div>
+                      </div>
+                      {rejectingId === r.id && rejectingKind === 'backdate' && (
+                        <div className="mt-2 p-2 rounded-[8px] bg-red-50/60 border border-red-100">
+                          <textarea
+                            className="input text-[11px] min-h-[40px]"
+                            placeholder="เหตุผลที่ปฏิเสธ (ไม่บังคับ)"
+                            value={rejectReason}
+                            onChange={e => setRejectReason(e.target.value)}
+                            autoFocus
+                          />
+                          <div className="flex gap-1.5 mt-1.5">
+                            <button onClick={() => rejectBackdate(r.id, rejectReason)} className="btn text-[11px] text-red-600 border-red-200 hover:bg-red-50">
+                              ยืนยันปฏิเสธ
+                            </button>
+                            <button onClick={() => { setRejectingId(null); setRejectingKind(null); setRejectReason('') }} className="btn text-[11px]">
+                              ยกเลิก
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -344,8 +569,10 @@ export default function DashboardPage() {
           <div className="grid grid-cols-2 gap-2">
             {[
               { href: '/attendance', icon: IconClockCheck, label: 'เช็คอิน', color: '#1D9E75', bg: '#E1F5EE', roles: ['hr','employee'] as const },
-              { href: '/leave',      icon: IconCalendarOff, label: 'ยื่นลา', color: '#534AB7', bg: '#EEEDFE', roles: ['hr','employee','owner'] as const },
-              { href: '/ot',         icon: IconClockPlus, label: 'ขอ OT',  color: '#BA7517', bg: '#FAEEDA', roles: ['hr','employee'] as const },
+              // /leave: employees & HR file requests; owner only approves
+              // them, so the label changes to match what they'll actually do.
+              { href: '/leave',      icon: IconCalendarOff, label: role === 'owner' ? 'อนุมัติลา' : 'ยื่นลา', color: '#534AB7', bg: '#EEEDFE', roles: ['hr','employee','owner'] as const },
+              { href: '/ot',         icon: IconClockPlus, label: role === 'owner' ? 'อนุมัติ OT' : 'ขอ OT',  color: '#BA7517', bg: '#FAEEDA', roles: ['hr','employee','owner'] as const },
               { href: '/payroll',    icon: IconTrendingUp, label: role === 'employee' ? 'ดูสลิป' : 'เงินเดือน', color: '#185FA5', bg: '#E6F1FB', roles: ['hr','employee','owner'] as const },
             ]
               .filter(a => !role || (a.roles as readonly string[]).includes(role))
