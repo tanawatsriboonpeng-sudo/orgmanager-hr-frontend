@@ -23,6 +23,7 @@ export const config = {
     '/employees/:path*',
     '/org-chart/:path*',
     '/audit-logs/:path*',
+    '/notifications/:path*',
     '/settings/:path*',
   ],
 }

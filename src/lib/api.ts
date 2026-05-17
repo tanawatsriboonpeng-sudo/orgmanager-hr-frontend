@@ -458,6 +458,39 @@ export const orgApi = {
   update: (data: OrgSettingsUpdate) => api.patch('/org-settings', data),
 }
 
+// Notification APIs (in-app bell per user)
+export type NotificationType =
+  | 'leave_request_pending' | 'leave_approved' | 'leave_rejected'
+  | 'ot_request_pending'    | 'ot_approved'    | 'ot_rejected'
+  | 'payroll_approved'      | 'payroll_paid'
+  | 'announcement'
+  | 'password_reset'        | 'account_disabled' | 'account_enabled'
+  | string
+export interface Notification {
+  id: string
+  type: NotificationType
+  title: string
+  body: string | null
+  link: string | null
+  related_id: string | null
+  read_at: string | null
+  created_at: string
+}
+export interface NotificationListParams {
+  limit?: number
+  offset?: number
+  unread?: boolean
+}
+export const notificationApi = {
+  list: (params?: NotificationListParams) =>
+    api.get('/notifications', { params }),
+  unreadCount: () => api.get('/notifications/unread-count'),
+  markRead: (id: string) => api.post(`/notifications/${id}/read`),
+  markAllRead: () => api.post('/notifications/mark-all-read'),
+  delete: (id: string) => api.delete(`/notifications/${id}`),
+  clearRead: () => api.post('/notifications/clear-read'),
+}
+
 // Audit Log APIs
 export interface AuditLog {
   id: string

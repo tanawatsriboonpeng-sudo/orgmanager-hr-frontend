@@ -14,6 +14,7 @@ import {
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
+import NotificationBell from '@/components/notifications/NotificationBell'
 
 // Removed dead links: /finance, /cleaning, /recruit — the pages were
 // deleted earlier but the sidebar still pointed at them, producing 404s.
@@ -134,7 +135,9 @@ export default function Sidebar() {
           </button>
         </div>
 
-        {/* User chip */}
+        {/* User chip + notification bell. Bell sits on the right edge
+            of the chip so it's reachable from every dashboard page
+            without taking up its own slot in the nav rail. */}
         <div className="mx-3 mt-3 mb-1 p-2.5 rounded-[10px] bg-gray-50 flex items-center gap-2.5">
           <EmployeeAvatar person={user as any} size={28} />
           <div className="flex-1 min-w-0">
@@ -146,6 +149,7 @@ export default function Sidebar() {
               {ROLE_LABELS[role]}
             </div>
           </div>
+          <NotificationBell />
         </div>
 
         {/* Navigation */}
