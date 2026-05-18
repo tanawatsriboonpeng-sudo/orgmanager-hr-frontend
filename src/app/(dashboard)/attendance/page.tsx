@@ -40,13 +40,49 @@ function timeToMin(t?: string | null): number {
   return (parseInt(hh, 10) || 0) * 60 + (parseInt(mm, 10) || 0)
 }
 
-// Live hint shown above the check-in buttons:
-// what bucket the user falls in if they tap "เช็คอิน" right now, and
-// how many minutes until the next bucket. Returns null when there's
-// nothing helpful to display (already checked in, no shift, day off).
-function shiftHint(now: any, shift: any | null, alreadyCheckedIn: boolean): { text: string; color: string } | null {
-  if (!shift || shift.isDayOff || alreadyCheckedIn) return null
+// Live hint shown above the check-in buttons. Three branches:
+//   - not yet checked in : show which bucket they'd fall into and how
+//     long until the next one (the original behavior).
+//   - checked-in, not yet checked-out, past work_end : nudge them
+//     to tap เช็คเอาท์ (Layer 5 of the forgot-checkout prevention).
+//   - everything else : null (no hint).
+function shiftHint(
+  now: any,
+  shift: any | null,
+  todayLog: { check_in_at?: any; check_out_at?: any } | null,
+): { text: string; color: string } | null {
+  if (!shift || shift.isDayOff) return null
+  const checkedIn  = !!todayLog?.check_in_at
+  const checkedOut = !!todayLog?.check_out_at
   const nowMin = now.hour() * 60 + now.minute() + now.second() / 60
+
+  // === Post-checkin, awaiting checkout ===
+  if (checkedIn && !checkedOut) {
+    // Flexible shift: pick the latest checkout time across the tiers
+    // (most lenient bound). If we're past it, nudge.
+    if (shift.shift_type === 'flexible' && Array.isArray(shift.flex_tiers) && shift.flex_tiers.length) {
+      const latestOut = shift.flex_tiers.reduce(
+        (acc: number, t: any) => Math.max(acc, timeToMin(t.checkout)),
+        0,
+      )
+      if (latestOut && nowMin > latestOut) {
+        const over = Math.floor(nowMin - latestOut)
+        return { text: `เลยเวลาเลิกงานแล้ว ${over} นาที — อย่าลืมเช็คเอาท์`, color: '#BA7517' }
+      }
+      return null
+    }
+    const workEnd = timeToMin(shift.work_end)
+    if (workEnd && nowMin > workEnd) {
+      const over = Math.floor(nowMin - workEnd)
+      return { text: `เลยเวลาเลิกงานแล้ว ${over} นาที — อย่าลืมเช็คเอาท์`, color: '#BA7517' }
+    }
+    return null
+  }
+
+  // === Already checked-out ===
+  if (checkedOut) return null
+
+  // === Not yet checked in (original pre-checkin behavior) ===
 
   if (shift.shift_type === 'flexible' && Array.isArray(shift.flex_tiers) && shift.flex_tiers.length) {
     const sorted = [...shift.flex_tiers].sort((a: any, b: any) => timeToMin(a.checkin_until) - timeToMin(b.checkin_until))
@@ -347,6 +383,41 @@ export default function AttendancePage() {
         </div>
       )}
 
+      {/* Past-missing-checkout banner (Layer 3). Surfaces every past
+          day where the user checked in but never tapped เช็คเอาท์ — so
+          they can file a backdate request with the actual out time
+          instead of letting the row sit with work_hours=0 forever. */}
+      {(() => {
+        const today = dayjs().format('YYYY-MM-DD')
+        const missing = history.filter(r =>
+          r.check_in_at && !r.check_out_at && r.date && r.date < today
+        )
+        if (missing.length === 0) return null
+        const first = missing[0]
+        return (
+          <div className="mb-4 p-3 rounded-[10px] border border-amber-200 bg-amber-50/70 flex items-start gap-3">
+            <IconAlertTriangle size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-medium text-amber-900">
+                คุณยังไม่ได้เช็คเอาท์ {missing.length === 1
+                  ? `วันที่ ${dayjs(first.date).format('D MMM')}`
+                  : `${missing.length} วันที่ผ่านมา`
+                }
+              </div>
+              <div className="text-[11px] text-amber-800 mt-0.5">
+                กรุณายื่นคำขอลงเวลาย้อนหลังเพื่อแจ้งเวลาออกจริง — ไม่อย่างนั้นจะนับชั่วโมงทำงานวันนั้นเป็น 0
+              </div>
+            </div>
+            <button
+              onClick={() => { setBackdateInitialDate(first.date); setShowBackdate(true) }}
+              className="btn btn-primary text-xs py-1.5 px-2.5 flex-shrink-0"
+            >
+              ยื่นย้อนหลัง
+            </button>
+          </div>
+        )
+      })()}
+
       {/* Daily summary — HR / Owner */}
       {canSeeDaily && (
         <DailySummaryCard
@@ -399,7 +470,7 @@ export default function AttendancePage() {
                     )}
                   </div>
                   {(() => {
-                    const hint = shiftHint(now, shiftInfo, !!todayLog?.check_in_at)
+                    const hint = shiftHint(now, shiftInfo, todayLog)
                     return hint ? (
                       <div className="mt-1.5 text-[11px] font-medium" style={{ color: hint.color }}>
                         {hint.text}
