@@ -24,10 +24,18 @@ interface UIMessage {
 }
 
 // Small starter prompts to nudge first-time users. Tap to send.
-const SUGGESTIONS = [
+// Owner/HR get admin-flavored prompts (they can also use the read-only
+// ones); employees only see the read-only set.
+const EMPLOYEE_SUGGESTIONS = [
   'ลาพักร้อนเหลือกี่วัน?',
   'พรุ่งนี้กะอะไร?',
   'สลิปเดือนที่แล้วได้เท่าไหร่?',
+  'วันหยุดที่ใกล้ที่สุดคือวันไหน?',
+]
+const ADMIN_SUGGESTIONS = [
+  'มีคำขอลาที่รออนุมัติไหม?',
+  'เพิ่มวันหยุด 12 ส.ค. ชื่อ วันแม่',
+  'สร้างประกาศประชุมพรุ่งนี้ 10 โมง',
   'วันหยุดที่ใกล้ที่สุดคือวันไหน?',
 ]
 
@@ -237,7 +245,10 @@ export default function ChatWidget() {
                     ลองถามคำถามเหล่านี้ดูได้
                   </div>
                   <div className="flex flex-wrap gap-1.5 justify-center px-2">
-                    {SUGGESTIONS.map(s => (
+                    {(user?.role === 'owner' || user?.role === 'hr'
+                      ? ADMIN_SUGGESTIONS
+                      : EMPLOYEE_SUGGESTIONS
+                    ).map(s => (
                       <button
                         key={s}
                         onClick={() => send(s)}
