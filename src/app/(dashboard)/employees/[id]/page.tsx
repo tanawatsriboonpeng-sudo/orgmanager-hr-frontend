@@ -55,6 +55,12 @@ interface Profile {
   bank_name?: string
   bank_branch_code?: string
   payment_method?: string
+  // Recurring payroll deductions (FlowAccount-style slip).
+  // Pulled into each new payslip on bulk-generate / "+ เพิ่มสลิป".
+  student_loan_id?: string
+  student_loan_monthly?: number
+  deposit_monthly?: number
+  deposit_accumulated?: number
   // Free-form
   notes?: string
   hashtags?: string[]

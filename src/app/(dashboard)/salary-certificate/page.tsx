@@ -268,54 +268,78 @@ export default function SalaryCertificatePage() {
             sidebar / form column / chat widget all disappear and the
             letter prints by itself on a clean page. */}
         <div className="print-doc-root bg-white border border-gray-200 rounded-[12px] shadow-sm print:border-0 print:shadow-none print:rounded-none">
-          <div className="px-12 py-14 print:px-12 print:py-12 max-w-[210mm] mx-auto text-[15px] leading-[1.9] text-[#111110]">
+          {/*
+           * `lang="th"` + `[word-break:keep-all]` is the fix for
+           * Thai mid-syllable line breaks. Without these hints the
+           * browser will happily split "สิริคอนส์" into "สิริ" /
+           * "คอนส์" across two lines because Thai script has no
+           * intrinsic word boundaries. word-break:keep-all forces
+           * breaks to happen only at actual whitespace; lang="th"
+           * gives the layout engine the right ICU break iterator.
+           *
+           * `text-justify-inter-character` is a Tailwind escape for
+           * `text-align: justify; text-justify: inter-character` —
+           * the only justify mode that handles Thai cleanly (the
+           * default `inter-word` only stretches at spaces, which
+           * Thai barely has).
+           */}
+          <div
+            lang="th"
+            className="px-14 py-14 print:px-14 print:py-12 max-w-[210mm] mx-auto text-[15px] leading-[2] text-[#111110] [word-break:keep-all]"
+          >
             {/* Company header — top right block */}
-            <div className="text-right mb-10">
-              <div className="font-semibold text-[16px]">
+            <div className="text-right mb-12">
+              <div className="font-bold text-[17px] tracking-tight">
                 {org?.company_name || 'บริษัท —'}
               </div>
               {org?.company_address ? (
-                <div className="text-[13px] text-gray-700 whitespace-pre-line">
+                <div className="text-[13px] text-gray-700 whitespace-pre-line mt-1">
                   {org.company_address}
                 </div>
               ) : (
-                <div className="text-[12px] text-gray-400 italic print:hidden">
+                <div className="text-[12px] text-gray-400 italic print:hidden mt-1">
                   (ตั้งค่าที่อยู่บริษัทได้ที่ /settings)
                 </div>
               )}
             </div>
 
-            <h2 className="text-center font-semibold text-[18px] mb-10">
+            <h2 className="text-center font-bold text-[20px] mb-12 tracking-wide">
               หนังสือรับรองเงินเดือน
             </h2>
 
-            <div className="space-y-4">
-              <p className="indent-12">
+            <div className="space-y-5 [text-align:justify] [text-justify:inter-character]">
+              <p className="indent-[3em]">
                 หนังสือฉบับนี้ออกให้เพื่อรับรองว่า <Slot>{title} {fullName || '—'}</Slot>
                 {' '}เป็นพนักงานของ <Slot>{org?.company_name || '—'}</Slot>
                 {' '}ปฏิบัติงานในตำแหน่ง <Slot>{position}</Slot>
                 {' '}โดยเริ่มงานตั้งแต่วันที่ <Slot>{startThai}</Slot>
                 {' '}จนถึงปัจจุบัน ซึ่งปัจจุบันมีอัตราเงินเดือน
                 เดือนละ <Slot>{salary.toLocaleString('th-TH', { minimumFractionDigits: 0 })} บาท</Slot>
-                {' '}({salaryWords || '—'})
+                {' '}(<Slot>{salaryWords || '—'}</Slot>)
               </p>
 
-              <p className="indent-12">
+              <p className="indent-[3em]">
                 หนังสือรับรองเงินเดือนฉบับนี้ใช้เพื่อ{' '}
                 <Slot>{purpose.trim() || '...(ระบุวัตถุประสงค์ในการใช้)...'}</Slot>
                 {' '}เท่านั้น
               </p>
             </div>
 
-            {/* Date + signature block */}
-            <div className="mt-16 flex flex-col items-end gap-1">
-              <div>ออกให้ ณ วันที่ {issueThai}</div>
-              <div className="mt-14 text-center">
-                <div>ลงชื่อ {'.'.repeat(34)}</div>
-                <div className="mt-1">
-                  ({signerName || '.'.repeat(28)})
+            {/* Date + signature block — sits on the right side of
+                the page, mimicking a typewritten formal letter.
+                Two stacked blocks: the date line above, then the
+                signature column (lines / name / position) centred
+                under it. */}
+            <div className="mt-20 flex flex-col items-end gap-14">
+              <div className="pr-4">ออกให้ ณ วันที่ <Slot>{issueThai}</Slot></div>
+              <div className="text-center min-w-[300px]">
+                <div>ลงชื่อ {'.'.repeat(30)}</div>
+                <div className="mt-2">
+                  ( <span className="font-medium">{signerName || '.'.repeat(26)}</span> )
                 </div>
-                <div className="mt-1">ตำแหน่ง {signerPosition}</div>
+                <div className="mt-1">
+                  ตำแหน่ง <span className="font-medium">{signerPosition}</span>
+                </div>
               </div>
             </div>
           </div>
