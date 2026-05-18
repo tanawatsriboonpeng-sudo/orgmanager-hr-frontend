@@ -818,7 +818,19 @@ function TicketDetailModal({
       setAiDrafted(true)
       flash('AI ร่างคำตอบให้แล้ว — โปรดตรวจก่อนกดส่ง')
     } catch (e: any) {
-      flash(e?.response?.data?.message || 'ร่างคำตอบไม่สำเร็จ', false)
+      // Distinguish axios timeout from server-returned errors so the
+      // user knows whether to retry (timeout) or check setup (other).
+      // Was just defaulting to "ร่างคำตอบไม่สำเร็จ" which gave no clue.
+      const msg = e?.code === 'ECONNABORTED' || /timeout/i.test(e?.message || '')
+        ? 'AI ใช้เวลานานเกินไป ลองอีกครั้ง'
+        : e?.response?.data?.message
+          || (e?.response?.status ? `ร่างคำตอบไม่สำเร็จ (HTTP ${e.response.status})` : null)
+          || e?.message
+          || 'ร่างคำตอบไม่สำเร็จ'
+      flash(msg, false)
+      // Surface the underlying error so the user can paste it back
+      // if it's something unexpected.
+      console.error('[support] AI draft failed:', e)
     } finally {
       setAiDrafting(false)
     }
@@ -983,10 +995,18 @@ function TicketDetailModal({
                 className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border border-[#1D9E75]/30 text-[#0F6E56] bg-white hover:bg-[#E1F5EE] disabled:opacity-50 transition-colors"
                 title="ให้ AI ช่วยร่างคำตอบจากเนื้อหา ticket — คุณตรวจก่อนส่งเอง"
               >
-                <IconSparkles size={12} />
+                <IconSparkles
+                  size={12}
+                  className={clsx(aiDrafting && 'animate-spin')}
+                />
                 {aiDrafting ? 'กำลังร่าง…' : 'ขอ AI ช่วยร่าง'}
               </button>
             </div>
+            {aiDrafting && (
+              <div className="mb-2 text-[10px] text-gray-400 text-right">
+                AI กำลังคิด… ใช้เวลา ~5-10 วินาที (รอสักครู่)
+              </div>
+            )}
 
             {/* Intent chips + free-text note — these steer the AI
                 draft. Without picking anything the draft is open-

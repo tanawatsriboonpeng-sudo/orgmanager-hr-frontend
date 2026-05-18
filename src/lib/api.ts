@@ -1113,6 +1113,11 @@ export const aiApi = {
         intent: opts?.intent || undefined,
         intent_note: opts?.intentNote || undefined,
       },
+      // AI calls can take longer than the global 60s default when
+      // Render is cold OR Anthropic is under load. 120s gives enough
+      // headroom without making the user wait forever if it's truly
+      // hung — the modal still shows "กำลังร่าง..." the whole time.
+      { timeout: 120000 },
     ),
 }
 
