@@ -619,6 +619,20 @@ export interface PayrollRecord {
   bank_account?: string
   bank_name?: string
   bank_branch_code?: string
+  // Attached by GET /payroll/:id only — the approved OT requests that
+  // were rolled up into this slip's ot_hours/ot_amount. Lets the detail
+  // modal show a per-request trace ("18 ก.พ. 18:00–20:00 = 2 ชม.").
+  ot_breakdown?: OtBreakdownItem[]
+}
+export interface OtBreakdownItem {
+  id: string
+  date: string          // ISO YYYY-MM-DD (work date)
+  start_time: string    // HH:MM:SS
+  end_time: string
+  hours: string | number
+  rate: string | number | null
+  reason: string | null
+  status: string
 }
 export interface PayrollCreate {
   employeeId: string

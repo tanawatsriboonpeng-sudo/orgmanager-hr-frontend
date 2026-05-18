@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { payrollApi, employeeApi, type PayrollRecord, type PayrollStatus } from '@/lib/api'
+import { payrollApi, employeeApi, type PayrollRecord, type PayrollStatus, type OtBreakdownItem } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
   IconPlus, IconCheck, IconCash, IconTrash, IconReceipt2,
@@ -594,6 +594,20 @@ function SlipDetailModal({
     notes: record.notes || '',
   })
 
+  // Pull the per-request OT breakdown lazily — the list endpoint
+  // doesn't include it (it's a separate join, only worth running when
+  // someone is actually looking at the slip). null = still loading,
+  // [] = no breakdown rows (slip has 0 OT or generated before OT
+  // requests existed).
+  const [otBreakdown, setOtBreakdown] = useState<OtBreakdownItem[] | null>(null)
+  useEffect(() => {
+    let alive = true
+    payrollApi.getOne(record.id)
+      .then(r => { if (alive) setOtBreakdown(r.data.data?.ot_breakdown || []) })
+      .catch(() => { if (alive) setOtBreakdown([]) })
+    return () => { alive = false }
+  }, [record.id])
+
   const save = async () => {
     setBusy(true)
     try {
@@ -696,7 +710,7 @@ function SlipDetailModal({
           <NetPreview form={form} />
         </div>
       ) : (
-        <SlipReadOnly record={record} />
+        <SlipReadOnly record={record} otBreakdown={otBreakdown} />
       )}
 
       {/* Footer actions */}
@@ -777,7 +791,7 @@ function SlipDetailModal({
   )
 }
 
-function SlipReadOnly({ record }: { record: PayrollRecord }) {
+function SlipReadOnly({ record, otBreakdown }: { record: PayrollRecord; otBreakdown?: OtBreakdownItem[] | null }) {
   const additions = toNum(record.base_salary) + toNum(record.ot_amount) + toNum(record.bonus) + toNum(record.allowances)
   const deductions = toNum(record.social_security) + toNum(record.income_tax) + toNum(record.other_deductions)
   return (
@@ -786,6 +800,7 @@ function SlipReadOnly({ record }: { record: PayrollRecord }) {
         <h3 className="text-xs font-semibold text-gray-500 mb-2">รายรับ</h3>
         <Row label="เงินเดือนพื้นฐาน" value={record.base_salary} />
         <Row label="ค่าล่วงเวลา (OT)" value={record.ot_amount} sub={`${toNum(record.ot_hours)} ชม.`} />
+        <OtBreakdownPanel breakdown={otBreakdown} totalHours={toNum(record.ot_hours)} totalAmount={toNum(record.ot_amount)} />
         <Row label="โบนัส" value={record.bonus} />
         <Row label="เบี้ยเลี้ยง/อื่นๆ" value={record.allowances} />
         <Row label="รวมรายรับ" value={additions} bold />
@@ -849,6 +864,98 @@ function Row({ label, value, sub, bold, negative }: { label: string; value: any;
       <span className={clsx('tabular-nums', negative ? 'text-red-600' : 'text-[#111110]')}>
         {negative && toNum(value) > 0 ? '-' : ''}{fmtMoney(value)}
       </span>
+    </div>
+  )
+}
+
+/* ===== OT Breakdown Panel =====
+ * Renders the per-request trace of approved OT under the "ค่าล่วงเวลา"
+ * row in SlipReadOnly. Three rendering states:
+ *   - breakdown === null → still loading (skeleton text)
+ *   - breakdown.length === 0 → no approved OT (panel hidden entirely)
+ *   - otherwise → expandable list
+ *
+ * Sum-mismatch warning: if the rows don't sum to record.ot_hours (e.g.
+ * HR manually edited the slip's ot_hours after generation), we show a
+ * small amber note so the discrepancy is visible — otherwise the trace
+ * would look like a lie.
+ */
+function OtBreakdownPanel({
+  breakdown, totalHours, totalAmount,
+}: {
+  breakdown?: OtBreakdownItem[] | null
+  totalHours: number
+  totalAmount: number
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  if (breakdown === null || breakdown === undefined) {
+    return (
+      <div className="ml-3 mb-1 text-[11px] text-gray-400 italic">
+        กำลังโหลดรายละเอียด OT…
+      </div>
+    )
+  }
+  if (breakdown.length === 0) {
+    // No approved OT requests for this month — skip the panel entirely
+    // so the slip stays compact. The "0.00" already shows on the Row.
+    return null
+  }
+
+  const sumHours = breakdown.reduce((acc, b) => acc + toNum(b.hours), 0)
+  const hoursMismatch = Math.abs(sumHours - totalHours) > 0.01
+  // The slip stores ot_amount as a separate (editable) figure; we derive
+  // a per-request amount on the fly by prorating totalAmount across
+  // hours so the column sums to the slip total even when rates differ.
+  const perHourAmount = sumHours > 0 ? totalAmount / sumHours : 0
+
+  return (
+    <div className="ml-3 mb-2">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="text-[11px] text-[#1D9E75] hover:underline flex items-center gap-1"
+      >
+        {expanded ? '▾ ซ่อน' : '▸ ดู'}รายการ OT {breakdown.length} ครั้ง
+        {hoursMismatch && (
+          <span className="text-amber-700 ml-1" title="ชั่วโมง OT ในสลิปถูกแก้ไขด้วยมือ ไม่ตรงกับยอดรวมคำขอ">
+            ⚠ ไม่ตรงกับสลิป
+          </span>
+        )}
+      </button>
+
+      {expanded && (
+        <div className="mt-1.5 bg-gray-50 rounded-[8px] border border-black/[0.05] divide-y divide-black/[0.05] text-[11px]">
+          {breakdown.map(b => {
+            const hrs = toNum(b.hours)
+            const amt = hrs * perHourAmount
+            return (
+              <div key={b.id} className="px-2.5 py-1.5 flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-gray-700 tabular-nums">
+                    {dayjs(b.date).format('D MMM')}
+                    <span className="text-gray-400 font-normal ml-1.5">
+                      {String(b.start_time || '').slice(0,5)}–{String(b.end_time || '').slice(0,5)}
+                    </span>
+                  </div>
+                  {b.reason && (
+                    <div className="text-gray-500 truncate" title={b.reason}>
+                      {b.reason}
+                    </div>
+                  )}
+                </div>
+                <div className="text-right tabular-nums flex-shrink-0">
+                  <div className="text-gray-700">{hrs.toFixed(2)} ชม.</div>
+                  <div className="text-gray-400 text-[10px]">฿{fmtMoney(amt)}</div>
+                </div>
+              </div>
+            )
+          })}
+          <div className="px-2.5 py-1.5 flex justify-between font-semibold text-gray-700 bg-white">
+            <span>รวม</span>
+            <span className="tabular-nums">{sumHours.toFixed(2)} ชม.</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
