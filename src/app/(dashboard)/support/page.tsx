@@ -9,7 +9,7 @@ import { useAuthStore } from '@/lib/store'
 import {
   IconLifebuoy, IconBug, IconHelp, IconSparkles, IconUserQuestion, IconMessage,
   IconPlus, IconX, IconCheck, IconPaperclip, IconArrowBackUp,
-  IconClipboardList,
+  IconClipboardList, IconSearch, IconClock, IconAlertCircle, IconCircleCheck,
 } from '@tabler/icons-react'
 import dayjs from 'dayjs'
 import clsx from 'clsx'
@@ -36,6 +36,53 @@ const STATUS_BADGE: Record<SupportStatus, string> = {
   open: 'bg-amber-50 text-amber-700 border-amber-200',
   answered: 'bg-blue-50 text-blue-700 border-blue-200',
   closed: 'bg-gray-100 text-gray-600 border-gray-200',
+}
+
+// Compact stat tile used at the top of the list. Optionally
+// clickable — when wired, doubles as a toggleable status filter
+// (click "รอตอบ" to drill in, click again to clear). active=true
+// outlines it in the matching color so the user knows the list is
+// scoped.
+const STAT_COLORS: Record<string, { bg: string; text: string; border: string; ring: string }> = {
+  amber:   { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200',   ring: 'ring-amber-300' },
+  blue:    { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200',    ring: 'ring-blue-300' },
+  gray:    { bg: 'bg-gray-50',    text: 'text-gray-700',    border: 'border-gray-200',    ring: 'ring-gray-300' },
+  emerald: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', ring: 'ring-emerald-300' },
+}
+function StatCard({
+  label, value, icon: Icon, color, active, onClick,
+}: {
+  label: string
+  value: number
+  icon: any
+  color: keyof typeof STAT_COLORS
+  active?: boolean
+  onClick?: () => void
+}) {
+  const c = STAT_COLORS[color]
+  const clickable = !!onClick
+  const Inner = (
+    <div className="flex items-center gap-2.5">
+      <div className={clsx('w-8 h-8 rounded-[8px] border flex items-center justify-center flex-shrink-0', c.bg, c.text, c.border)}>
+        <Icon size={15} />
+      </div>
+      <div className="min-w-0">
+        <div className="text-[10px] text-gray-500 truncate">{label}</div>
+        <div className="text-base font-semibold tabular-nums text-[#111110]">{value}</div>
+      </div>
+    </div>
+  )
+  return clickable ? (
+    <button
+      onClick={onClick}
+      className={clsx(
+        'card text-left w-full transition-all hover:border-gray-300',
+        active && `ring-2 ${c.ring} ring-offset-1`,
+      )}
+    >{Inner}</button>
+  ) : (
+    <div className="card">{Inner}</div>
+  )
 }
 
 // File → resized 800px-max base64 dataURL. Matches the pattern used by
@@ -92,6 +139,10 @@ export default function SupportPage() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [openTicket, setOpenTicket] = useState<SupportTicket | null>(null)
+  // Free-text search across subject + description + requester name.
+  // Lightweight client-side filter — the list is capped at 100 rows
+  // by the API so we don't need server-side search.
+  const [searchQ, setSearchQ] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -117,24 +168,83 @@ export default function SupportPage() {
     if (searchParams?.get('ticket')) router.replace('/support')
   }
 
-  // Apply filters (view + status + category) in one pass.
+  // Apply filters (view + status + category + search) in one pass.
   const filtered = useMemo(() => {
+    const q = searchQ.trim().toLowerCase()
     return tickets.filter(t => {
       if (!isStaff || view === 'mine') {
         if (t.user_id !== user?.id) return false
       }
       if (statusFilter !== 'all' && t.status !== statusFilter) return false
       if (categoryFilter !== 'all' && t.category !== categoryFilter) return false
+      if (q) {
+        const haystack = [
+          t.subject, t.description,
+          t.requester_first_name, t.requester_last_name,
+          t.requester_nickname, t.requester_email,
+        ].filter(Boolean).join(' ').toLowerCase()
+        if (!haystack.includes(q)) return false
+      }
       return true
     })
-  }, [tickets, view, statusFilter, categoryFilter, isStaff, user?.id])
+  }, [tickets, view, statusFilter, categoryFilter, searchQ, isStaff, user?.id])
 
   // Counts for the tab badges — gives staff at-a-glance "how many need
-  // my attention right now."
+  // my attention right now." Scoped to the current view (mine vs all)
+  // so an employee's "ของฉัน" badge counts their own open tickets only.
   const pendingCount = useMemo(
     () => tickets.filter(t => t.status === 'open').length,
     [tickets]
   )
+
+  // Stat-card numbers. Use the same view scope as the list so they
+  // line up with what the user is looking at. "Today" = opened
+  // within the current calendar day.
+  const stats = useMemo(() => {
+    const scope = tickets.filter(t => {
+      if (!isStaff || view === 'mine') return t.user_id === user?.id
+      return true
+    })
+    const startOfDay = dayjs().startOf('day')
+    return {
+      total: scope.length,
+      open: scope.filter(t => t.status === 'open').length,
+      answered: scope.filter(t => t.status === 'answered').length,
+      closed: scope.filter(t => t.status === 'closed').length,
+      today: scope.filter(t => dayjs(t.created_at).isAfter(startOfDay)).length,
+    }
+  }, [tickets, view, isStaff, user?.id])
+
+  // Did the user actually narrow anything? Used to show "ล้างตัวกรอง"
+  // in the empty state when filters return zero rows.
+  const hasActiveFilters =
+    statusFilter !== 'all' || categoryFilter !== 'all' || searchQ.trim().length > 0
+  const clearFilters = () => {
+    setStatusFilter('all'); setCategoryFilter('all'); setSearchQ('')
+  }
+
+  // Aging — "ค้างมานานแค่ไหน" for OPEN tickets. Closed/answered
+  // tickets don't carry a badge because the clock's not running.
+  // Returns null when nothing interesting to show.
+  const ageBadge = (t: SupportTicket): { text: string; cls: string } | null => {
+    if (t.status !== 'open') return null
+    const created = dayjs(t.created_at)
+    const hours = dayjs().diff(created, 'hour')
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24)
+      return {
+        text: days > 0 ? `ค้างมา ${days} วัน` : `ค้างมา ${hours} ชม.`,
+        cls: 'bg-red-50 text-red-700 border-red-200',
+      }
+    }
+    if (hours >= 8) {
+      return { text: `ค้างมา ${hours} ชม.`, cls: 'bg-amber-50 text-amber-700 border-amber-200' }
+    }
+    if (dayjs().diff(created, 'minute') < 60) {
+      return { text: 'ใหม่', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+    }
+    return null
+  }
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -201,6 +311,68 @@ export default function SupportPage() {
         </div>
       )}
 
+      {/* Stat cards — at-a-glance breakdown of the current view. Each
+          tile doubles as a status filter so HR can click "รอตอบ" to
+          drill in (mirrors the chip below but more discoverable). */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+        <StatCard
+          label="รอตอบ"
+          value={stats.open}
+          icon={IconAlertCircle}
+          color="amber"
+          active={statusFilter === 'open'}
+          onClick={() => setStatusFilter(statusFilter === 'open' ? 'all' : 'open')}
+        />
+        <StatCard
+          label="ตอบแล้ว"
+          value={stats.answered}
+          icon={IconMessage}
+          color="blue"
+          active={statusFilter === 'answered'}
+          onClick={() => setStatusFilter(statusFilter === 'answered' ? 'all' : 'answered')}
+        />
+        <StatCard
+          label="ปิดแล้ว"
+          value={stats.closed}
+          icon={IconCircleCheck}
+          color="gray"
+          active={statusFilter === 'closed'}
+          onClick={() => setStatusFilter(statusFilter === 'closed' ? 'all' : 'closed')}
+        />
+        <StatCard
+          label="เปิดวันนี้"
+          value={stats.today}
+          icon={IconClock}
+          color="emerald"
+        />
+      </div>
+
+      {/* Search box. Live-filter (no debounce needed — list is capped
+          at 100 rows so even on slow devices the filter pass is
+          instant). Clear button when there's input. */}
+      <div className="relative mb-3">
+        <IconSearch
+          size={14}
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+        />
+        <input
+          className="input pl-9 pr-8 text-sm"
+          placeholder="ค้นหาในหัวข้อ / รายละเอียด / ชื่อผู้แจ้ง…"
+          value={searchQ}
+          onChange={e => setSearchQ(e.target.value)}
+        />
+        {searchQ && (
+          <button
+            type="button"
+            onClick={() => setSearchQ('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+            title="ล้างคำค้นหา"
+          >
+            <IconX size={14} />
+          </button>
+        )}
+      </div>
+
       {/* Filter chips */}
       <div className="card mb-4">
         <div className="flex items-center gap-2 flex-wrap">
@@ -253,13 +425,30 @@ export default function SupportPage() {
       ) : filtered.length === 0 ? (
         <div className="card text-center py-10">
           <IconLifebuoy size={32} className="mx-auto text-gray-300 mb-2" />
-          <p className="text-sm text-gray-600">ไม่มีเรื่องในรายการ</p>
-          <button
-            onClick={() => setShowForm(true)}
-            className="mt-3 text-xs text-[#1D9E75] hover:underline"
-          >
-            เปิดเรื่องใหม่ →
-          </button>
+          {hasActiveFilters ? (
+            <>
+              <p className="text-sm text-gray-600">ไม่พบเรื่องที่ตรงกับตัวกรอง</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                ลองล้างตัวกรองเพื่อดูทั้งหมด
+              </p>
+              <button
+                onClick={clearFilters}
+                className="mt-3 text-xs text-[#1D9E75] hover:underline"
+              >
+                ล้างตัวกรอง →
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-gray-600">ยังไม่มีเรื่องในรายการ</p>
+              <button
+                onClick={() => setShowForm(true)}
+                className="mt-3 text-xs text-[#1D9E75] hover:underline"
+              >
+                เปิดเรื่องใหม่ →
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-2">
@@ -268,6 +457,7 @@ export default function SupportPage() {
             const requesterName =
               [t.requester_first_name, t.requester_last_name].filter(Boolean).join(' ') ||
               t.requester_email || 'พนักงาน'
+            const age = ageBadge(t)
             return (
               <button
                 key={t.id}
@@ -284,6 +474,14 @@ export default function SupportPage() {
                       <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-full border', STATUS_BADGE[t.status])}>
                         {STATUS_TH[t.status]}
                       </span>
+                      {age && (
+                        <span className={clsx(
+                          'text-[10px] px-1.5 py-0.5 rounded-full border inline-flex items-center gap-1',
+                          age.cls,
+                        )}>
+                          <IconClock size={9} /> {age.text}
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-gray-500 line-clamp-2">{t.description}</p>
                     <div className="flex items-center gap-2 mt-1.5 text-[10px] text-gray-400 flex-wrap">
