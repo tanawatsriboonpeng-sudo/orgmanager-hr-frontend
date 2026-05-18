@@ -1,5 +1,6 @@
 'use client'
 import Sidebar from '@/components/layout/Sidebar'
+import ChatWidget from '@/components/ai/ChatWidget'
 import { useAuthStore } from '@/lib/store'
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect } from 'react'
@@ -27,6 +28,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {children}
         </div>
       </main>
+      {/* Floating AI assistant — auto-hides when ANTHROPIC_API_KEY is
+          unset server-side, so this can stay mounted on every dashboard
+          route without conditional logic per-page. */}
+      <ChatWidget />
     </div>
   )
 }
