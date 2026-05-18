@@ -987,8 +987,26 @@ function ScheduleSection({ flash }: { flash: (text: string, ok?: boolean) => voi
       return { ...prev, weekdays: next.sort() }
     })
   }
+  // HH:MM → minutes-since-midnight. Used to compare start vs end
+  // without timezone math (both come from the same <input type=time>).
+  const toMin = (hhmm?: string) => {
+    if (!hhmm) return NaN
+    const [h, m] = hhmm.split(':').map(Number)
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return NaN
+    return h * 60 + m
+  }
+  const startMin = toMin(s?.start_time?.slice(0, 5))
+  const endMin   = toMin(s?.end_time?.slice(0, 5))
+  const timesValid = Number.isFinite(startMin) && Number.isFinite(endMin) && endMin > startMin
+  const timeError = !timesValid
+    ? Number.isFinite(startMin) && Number.isFinite(endMin) && endMin === startMin
+      ? 'เวลาเริ่มและสิ้นสุดต้องไม่เท่ากัน'
+      : 'เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่ม'
+    : null
+
   const save = async () => {
     if (!s) return
+    if (!timesValid) { flash(timeError || 'เวลาไม่ถูกต้อง', false); return }
     setSaving(true)
     try {
       await cleaningApi.updateSettings({
@@ -1041,12 +1059,15 @@ function ScheduleSection({ flash }: { flash: (text: string, ok?: boolean) => voi
           )
         })}
       </div>
-      <div className="grid grid-cols-2 gap-3 mb-4">
+      <div className="grid grid-cols-2 gap-3 mb-2">
         <div>
           <label className="label">เริ่ม</label>
           <input
             type="time"
-            className="input text-sm"
+            className={clsx(
+              'input text-sm',
+              !timesValid && 'border-red-300 focus:border-red-400 focus:ring-red-200'
+            )}
             value={s.start_time?.slice(0, 5)}
             onChange={e => setS(p => p ? { ...p, start_time: e.target.value + ':00' } : p)}
           />
@@ -1055,14 +1076,31 @@ function ScheduleSection({ flash }: { flash: (text: string, ok?: boolean) => voi
           <label className="label">สิ้นสุด</label>
           <input
             type="time"
-            className="input text-sm"
+            className={clsx(
+              'input text-sm',
+              !timesValid && 'border-red-300 focus:border-red-400 focus:ring-red-200'
+            )}
             value={s.end_time?.slice(0, 5)}
             onChange={e => setS(p => p ? { ...p, end_time: e.target.value + ':00' } : p)}
           />
         </div>
       </div>
+      {/* Inline validation message — appears under the time fields,
+          above the save button. Color matches the red border so the
+          eye links the message to the field. The button is disabled
+          while the times are invalid so accidental clicks don't fire
+          a request that the backend would just reject anyway. */}
+      {timeError && (
+        <div className="text-xs text-red-600 mb-3 flex items-center gap-1.5">
+          <IconAlertCircle size={13} /> {timeError}
+        </div>
+      )}
       <div className="flex justify-end">
-        <button onClick={save} disabled={saving} className="btn btn-primary text-sm">
+        <button
+          onClick={save}
+          disabled={saving || !timesValid}
+          className="btn btn-primary text-sm"
+        >
           {saving ? 'กำลังบันทึก…' : 'บันทึก'}
         </button>
       </div>
