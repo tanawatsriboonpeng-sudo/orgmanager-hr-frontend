@@ -45,6 +45,10 @@ export default function PayrollPage() {
 
   const [showGenerate, setShowGenerate] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
+  // When HR clicks a slipless row, we want the CreateSlipModal to open
+  // with that employee already chosen so they don't have to scroll the
+  // employee dropdown. null = open in fresh state (e.g. "+ เพิ่มสลิป" btn).
+  const [createPrefillEmpId, setCreatePrefillEmpId] = useState<string | null>(null)
   const [selected, setSelected] = useState<PayrollRecord | null>(null)
 
   const load = async () => {
@@ -62,9 +66,13 @@ export default function PayrollPage() {
 
   useEffect(() => { load() }, [month, year, statusFilter])
 
+  // Skip "slipless" rows in totals — they're roster reminders, not real
+  // payroll figures. Counting them would inflate the rayการ count and
+  // count() would always equal roster size.
   const totals = useMemo(() => {
-    const acc = { count: records.length, gross: 0, deductions: 0, net: 0 }
-    for (const r of records) {
+    const slips = records.filter(r => r.id)
+    const acc = { count: slips.length, slipless: records.length - slips.length, gross: 0, deductions: 0, net: 0 }
+    for (const r of slips) {
       acc.gross += toNum(r.base_salary) + toNum(r.ot_amount) + toNum(r.bonus) + toNum(r.allowances)
       acc.deductions += toNum(r.social_security) + toNum(r.income_tax) + toNum(r.other_deductions)
       acc.net += toNum(r.net_salary)
@@ -151,7 +159,12 @@ export default function PayrollPage() {
           )}
           <div className="flex items-end">
             <div className="text-xs text-gray-500">
-              <div>รวม {totals.count} รายการ</div>
+              <div>
+                รวม {totals.count} รายการ
+                {totals.slipless > 0 && (
+                  <span className="text-amber-700"> · ยังไม่มีสลิป {totals.slipless} คน</span>
+                )}
+              </div>
               <div className="text-[#085041] font-medium mt-0.5">สุทธิ ฿{fmtMoney(totals.net)}</div>
             </div>
           </div>
@@ -195,7 +208,20 @@ export default function PayrollPage() {
           />
         </div>
       ) : canManage ? (
-        <PayrollTable records={records} onPick={setSelected} />
+        <PayrollTable
+          records={records}
+          onPick={(r) => {
+            // Slipless rows (id=null) route to the create modal pre-
+            // filled with that employee instead of the detail modal —
+            // there's no slip to open yet.
+            if (!r.id) {
+              setCreatePrefillEmpId(r.employee_id)
+              setShowCreate(true)
+            } else {
+              setSelected(r)
+            }
+          }}
+        />
       ) : (
         <PayrollCards records={records} onPick={setSelected} />
       )}
@@ -212,14 +238,25 @@ export default function PayrollPage() {
       )}
       {showCreate && canManage && (
         <CreateSlipModal
-          onClose={() => setShowCreate(false)}
-          onDone={() => { setShowCreate(false); flash('สร้างสลิปแล้ว'); load() }}
+          prefillEmployeeId={createPrefillEmpId}
+          defaultMonth={typeof month === 'number' ? month : now.month() + 1}
+          defaultYear={year}
+          onClose={() => { setShowCreate(false); setCreatePrefillEmpId(null) }}
+          onDone={() => {
+            setShowCreate(false)
+            setCreatePrefillEmpId(null)
+            flash('สร้างสลิปแล้ว')
+            load()
+          }}
           onError={(msg) => flash(msg, true)}
         />
       )}
-      {selected && (
+      {selected && selected.id && (
+        // selected.id-truthy guard narrows to a real slip — see RealSlip
+        // type on SlipDetailModal. We route slipless rows elsewhere so
+        // this branch is the only path into the detail modal.
         <SlipDetailModal
-          record={selected}
+          record={selected as RealSlip}
           canManage={canManage}
           onClose={() => setSelected(null)}
           onChanged={() => { setSelected(null); load() }}
@@ -250,13 +287,19 @@ function PayrollTable({ records, onPick }: { records: PayrollRecord[]; onPick: (
           </thead>
           <tbody>
             {records.map((r) => {
+              const slipless = !r.id
               const additions = toNum(r.bonus) + toNum(r.allowances)
               const deductions = toNum(r.social_security) + toNum(r.income_tax) + toNum(r.other_deductions)
               return (
                 <tr
-                  key={r.id}
+                  // employee_id is always present (backend aliases e.id);
+                  // r.id is null on slipless rows so we fall back to it.
+                  key={r.id || `noslip-${r.employee_id}`}
                   onClick={() => onPick(r)}
-                  className="border-t border-black/[0.04] hover:bg-gray-50 cursor-pointer"
+                  className={clsx(
+                    'border-t border-black/[0.04] cursor-pointer',
+                    slipless ? 'bg-amber-50/30 hover:bg-amber-50/60' : 'hover:bg-gray-50',
+                  )}
                 >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -270,25 +313,38 @@ function PayrollTable({ records, onPick }: { records: PayrollRecord[]; onPick: (
                     </div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-gray-700">
-                    {MONTHS_TH[r.month - 1]} {r.year + 543}
+                    {r.month != null && r.year != null
+                      ? `${MONTHS_TH[r.month - 1]} ${r.year + 543}`
+                      : <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums">{fmtMoney(r.base_salary)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-gray-600">
-                    {toNum(r.ot_amount) > 0 ? fmtMoney(r.ot_amount) : '—'}
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {slipless ? <span className="text-gray-300">—</span> : fmtMoney(r.base_salary)}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-gray-600">
-                    {additions > 0 ? fmtMoney(additions) : '—'}
+                    {slipless ? <span className="text-gray-300">—</span>
+                      : toNum(r.ot_amount) > 0 ? fmtMoney(r.ot_amount) : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-gray-600">
+                    {slipless ? <span className="text-gray-300">—</span>
+                      : additions > 0 ? fmtMoney(additions) : '—'}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-red-600">
-                    {deductions > 0 ? `-${fmtMoney(deductions)}` : '—'}
+                    {slipless ? <span className="text-gray-300">—</span>
+                      : deductions > 0 ? `-${fmtMoney(deductions)}` : '—'}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#085041]">
-                    {fmtMoney(r.net_salary)}
+                    {slipless ? <span className="text-gray-300">—</span> : fmtMoney(r.net_salary)}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <span className={clsx('badge', STATUS_BADGE[r.status])}>
-                      {STATUS_TH[r.status]}
-                    </span>
+                    {slipless ? (
+                      <span className="badge bg-amber-100 text-amber-800 border border-amber-200">
+                        + สร้างสลิป
+                      </span>
+                    ) : (
+                      <span className={clsx('badge', STATUS_BADGE[r.status as PayrollStatus])}>
+                        {STATUS_TH[r.status as PayrollStatus]}
+                      </span>
+                    )}
                   </td>
                 </tr>
               )
@@ -304,7 +360,7 @@ function PayrollTable({ records, onPick }: { records: PayrollRecord[]; onPick: (
 function PayrollCards({ records, onPick }: { records: PayrollRecord[]; onPick: (r: PayrollRecord) => void }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {records.map((r) => (
+      {records.filter(r => r.id).map((r) => (
         <button
           key={r.id}
           onClick={() => onPick(r)}
@@ -312,11 +368,13 @@ function PayrollCards({ records, onPick }: { records: PayrollRecord[]; onPick: (
         >
           <div className="flex items-center justify-between mb-3">
             <div className="text-xs text-gray-500">
-              {MONTHS_TH[r.month - 1]} {r.year + 543}
+              {r.month ? MONTHS_TH[r.month - 1] : '-'} {r.year ? r.year + 543 : ''}
             </div>
-            <span className={clsx('badge', STATUS_BADGE[r.status])}>
-              {STATUS_TH[r.status]}
-            </span>
+            {r.status && (
+              <span className={clsx('badge', STATUS_BADGE[r.status])}>
+                {STATUS_TH[r.status]}
+              </span>
+            )}
           </div>
           <div className="text-2xl font-semibold text-[#085041] tabular-nums">
             ฿{fmtMoney(r.net_salary)}
@@ -398,16 +456,21 @@ function BulkGenerateModal({
 
 /* ===== Create Single Slip Modal ===== */
 function CreateSlipModal({
-  onClose, onDone, onError,
+  onClose, onDone, onError, prefillEmployeeId, defaultMonth, defaultYear,
 }: {
   onClose: () => void
   onDone: () => void
   onError: (msg: string) => void
+  prefillEmployeeId?: string | null
+  defaultMonth?: number
+  defaultYear?: number
 }) {
   const now = dayjs()
   const [employees, setEmployees] = useState<any[]>([])
   const [form, setForm] = useState({
-    employeeId: '', month: now.month() + 1, year: now.year(),
+    employeeId: prefillEmployeeId || '',
+    month: defaultMonth ?? (now.month() + 1),
+    year: defaultYear ?? now.year(),
     baseSalary: 0, otAmount: 0, bonus: 0, allowances: 0,
     socialSecurity: 0, incomeTax: 0, otherDeductions: 0,
     workDays: 0, absentDays: 0, lateCount: 0, otHours: 0,
@@ -416,7 +479,25 @@ function CreateSlipModal({
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    employeeApi.list().then(r => setEmployees(r.data.data || [])).catch(() => {})
+    employeeApi.list().then(r => {
+      const list = r.data.data || []
+      setEmployees(list)
+      // If the parent pre-selected an employee (e.g. clicked a slipless
+      // row in the table), populate base_salary from their profile now
+      // that the list is loaded — same behavior as if the user picked
+      // them from the dropdown.
+      if (prefillEmployeeId) {
+        const emp = list.find((x: any) => x.id === prefillEmployeeId)
+        if (emp) {
+          setForm(p => ({
+            ...p,
+            employeeId: prefillEmployeeId,
+            baseSalary: toNum(emp.base_salary),
+          }))
+        }
+      }
+    }).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const onEmployeeChange = (id: string) => {
@@ -483,10 +564,14 @@ function CreateSlipModal({
 }
 
 /* ===== Slip Detail / Edit Modal ===== */
+// This modal is only ever opened for rows that have a real slip (the
+// parent routes slipless roster rows to CreateSlipModal instead), so we
+// narrow PayrollRecord to guarantee id/month/year/status are present.
+type RealSlip = PayrollRecord & { id: string; month: number; year: number; status: PayrollStatus }
 function SlipDetailModal({
   record, canManage, onClose, onChanged, onError,
 }: {
-  record: PayrollRecord
+  record: RealSlip
   canManage: boolean
   onClose: () => void
   onChanged: () => void
@@ -503,8 +588,8 @@ function SlipDetailModal({
     incomeTax: toNum(record.income_tax),
     otherDeductions: toNum(record.other_deductions),
     workDays: record.work_days ?? 0,
-    absentDays: record.absent_days,
-    lateCount: record.late_count,
+    absentDays: record.absent_days ?? 0,
+    lateCount: record.late_count ?? 0,
     otHours: toNum(record.ot_hours),
     notes: record.notes || '',
   })
