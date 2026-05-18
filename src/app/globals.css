@@ -199,3 +199,97 @@ body {
   from { opacity: 0; transform: scale(0.96); }
   to   { opacity: 1; transform: scale(1); }
 }
+
+/* ============================================================
+   PRINT — used by the /payroll slip view (and any other
+   document-style screen that needs to print cleanly).
+
+   Strategy: when an element on the page is tagged with
+   `payslip-print-root`, we treat that as the document and
+   suppress *everything else* (sidebar, top bar, modal
+   backdrop, action buttons, …) so window.print() yields a
+   self-contained page. If no `payslip-print-root` exists,
+   the default browser print of the visible page applies —
+   so this only kicks in when something has explicitly
+   opted in.
+   ============================================================ */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
+  /* Hide everything by default, then re-show only the print
+     root + its ancestors. Each ancestor is set to display:
+     contents so it stops constraining width / scrolling. */
+  body * {
+    visibility: hidden;
+  }
+  body:has(.payslip-print-root) .payslip-print-root,
+  body:has(.payslip-print-root) .payslip-print-root * {
+    visibility: visible;
+  }
+
+  /* Re-flow the doc: take the print root out of the modal /
+     overflow containers and lay it out as a normal flow at
+     the top of the page. */
+  body:has(.payslip-print-root) .payslip-print-root {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: white;
+    color: black;
+    font-size: 11pt;
+    line-height: 1.4;
+  }
+
+  /* Anything tagged print:hidden gets fully removed (not just
+     visually hidden — also stops it from reserving space). */
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Avoid page-break inside individual columns / rows. */
+  .payslip-print-root .grid > div,
+  .payslip-print-root tr {
+    break-inside: avoid;
+  }
+
+  /* Keep the three-column layout on print even if the viewport
+     would have collapsed it to one column in screen CSS. */
+  .payslip-print-root .lg\:grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+  .payslip-print-root .sm\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* Tighten the badge palette — green Net pay is the only
+     accent that should survive; everything else prints black
+     on white. */
+  .payslip-print-root,
+  .payslip-print-root * {
+    color: black !important;
+  }
+  .payslip-print-root .text-\[\#0F6E56\],
+  .payslip-print-root .text-\[\#085041\] {
+    color: #0F6E56 !important;
+  }
+
+  /* Drop shadow + heavy backgrounds — they don't print well
+     and waste toner. */
+  .payslip-print-root * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Backdrop / overlay panels should be invisible AND not
+     consume space. */
+  .fixed.inset-0 {
+    position: static !important;
+    background: transparent !important;
+  }
+}
+
