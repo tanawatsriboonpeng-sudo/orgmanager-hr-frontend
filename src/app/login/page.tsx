@@ -2,7 +2,11 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/store'
-import { IconEye, IconEyeOff, IconCrown, IconUsers, IconUser, IconAlertCircle, IconBuilding, IconBrandLine } from '@tabler/icons-react'
+import {
+  IconEye, IconEyeOff, IconCrown, IconUsers, IconUser,
+  IconAlertCircle, IconBuilding, IconBrandLine,
+  IconMail, IconLock, IconCheck,
+} from '@tabler/icons-react'
 import Link from 'next/link'
 
 type Role = 'owner' | 'hr' | 'employee'
@@ -72,38 +76,86 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#F7F7F5] flex">
-      <div className="hidden lg:flex flex-col justify-between w-[420px] bg-[#0F6E56] p-10 text-white flex-shrink-0">
-        <div>
-          <div className="flex items-center gap-3 mb-16">
-            <div className="w-9 h-9 bg-white/10 rounded-xl flex items-center justify-center"><IconBuilding size={20} /></div>
-            <div><div className="font-semibold text-lg">สิริคอนส์</div><div className="text-white/60 text-xs">HR System</div></div>
-          </div>
-          <h1 className="text-4xl font-semibold leading-tight mb-4">ระบบบริหาร<br />บุคคลครบวงจร</h1>
-          <p className="text-white/70 text-sm leading-relaxed">บริษัท สิริคอนส์ คอนสตรัคชั่น จำกัด<br />จัดการพนักงาน เช็คอิน ลงเวลา การลา เงินเดือน</p>
-        </div>
-        <div className="space-y-3">
-          {['12 โมดูลครบในแอปเดียว','เช็คอิน GPS รัศมี 60 เมตร','สลิปเงินเดือนดิจิทัล','Dashboard real-time'].map(f => (
-            <div key={f} className="flex items-center gap-2.5 text-sm text-white/80">
-              <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">›</div>{f}
+      {/* ============================================================
+          LEFT — brand panel (desktop only). Layered gradient + a
+          decorative blob in the corner to give the flat green some
+          depth without distracting from the form. Footer line + a
+          tinted divider above the feature list anchor the layout.
+          ============================================================ */}
+      <div className="hidden lg:flex flex-col justify-between w-[460px] p-10 text-white flex-shrink-0 relative overflow-hidden">
+        {/* Layered background — base, deeper top-right glow, soft
+            bottom-left blob. Pure CSS so it doesn't add a network
+            request and survives offline / poor connections. */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0F6E56] via-[#0F6E56] to-[#0A5340]" />
+        <div className="absolute -top-32 -right-24 w-80 h-80 rounded-full bg-[#1D9E75]/30 blur-3xl" />
+        <div className="absolute -bottom-24 -left-16 w-72 h-72 rounded-full bg-[#06C755]/15 blur-3xl" />
+
+        <div className="relative">
+          <div className="flex items-center gap-3 mb-14">
+            <div className="w-10 h-10 bg-white/15 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-sm">
+              <IconBuilding size={20} />
             </div>
-          ))}
+            <div>
+              <div className="font-semibold text-lg leading-tight">สิริคอนส์</div>
+              <div className="text-white/60 text-[11px]">HR System</div>
+            </div>
+          </div>
+          <h1 className="text-[40px] font-semibold leading-[1.15] mb-5 tracking-tight">
+            ระบบบริหาร<br />
+            <span className="text-white/90">บุคคลครบวงจร</span>
+          </h1>
+          <p className="text-white/75 text-sm leading-relaxed max-w-[340px]">
+            บริษัท สิริคอนส์ คอนสตรัคชั่น จำกัด · จัดการพนักงาน
+            เช็คอิน ลงเวลา การลา และเงินเดือนในที่เดียว
+          </p>
+        </div>
+
+        <div className="relative">
+          <div className="border-t border-white/10 pt-5 space-y-3">
+            {[
+              '12 โมดูลครบในแอปเดียว',
+              'เช็คอินด้วย GPS รัศมี 60 เมตร',
+              'สลิปเงินเดือนดิจิทัล',
+              'Dashboard แบบเรียลไทม์',
+            ].map(f => (
+              <div key={f} className="flex items-center gap-2.5 text-[13px] text-white/85">
+                <div className="w-5 h-5 rounded-full bg-white/15 flex items-center justify-center flex-shrink-0">
+                  <IconCheck size={11} className="text-white" />
+                </div>
+                {f}
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 text-[10px] text-white/40">
+            © {new Date().getFullYear()} สิริคอนส์ คอนสตรัคชั่น
+          </div>
         </div>
       </div>
 
+      {/* ============================================================
+          RIGHT — sign-in form. Card has subtle shadow + border so it
+          feels lifted; the form itself stays compact at 400px max
+          width on desktop, full-width on mobile.
+          ============================================================ */}
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-[400px]">
           <div className="lg:hidden flex items-center gap-2 mb-8">
-            <div className="w-8 h-8 bg-[#1D9E75] rounded-xl flex items-center justify-center"><IconBuilding size={16} className="text-white" /></div>
-            <div><div className="font-semibold text-[#111110] text-sm">สิริคอนส์</div><div className="text-[10px] text-gray-400">HR System</div></div>
+            <div className="w-8 h-8 bg-[#1D9E75] rounded-xl flex items-center justify-center">
+              <IconBuilding size={16} className="text-white" />
+            </div>
+            <div>
+              <div className="font-semibold text-[#111110] text-sm">สิริคอนส์</div>
+              <div className="text-[10px] text-gray-400">HR System</div>
+            </div>
           </div>
 
-          <h2 className="text-2xl font-semibold text-[#111110] mb-1">
-            {linePairing ? 'ผูกบัญชี LINE' : 'เข้าสู่ระบบ'}
+          <h2 className="text-2xl font-semibold text-[#111110] mb-1.5 tracking-tight">
+            {linePairing ? 'ผูกบัญชี LINE' : 'ยินดีต้อนรับกลับมา 👋'}
           </h2>
           <p className="text-sm text-gray-500 mb-7">
             {linePairing
               ? 'กรอกอีเมล/รหัสผ่านของพนักงานเพื่อผูกบัญชี LINE ของคุณ'
-              : 'เลือกประเภทบัญชีและกรอกข้อมูล'}
+              : 'เลือกประเภทบัญชีและกรอกข้อมูลเพื่อเข้าสู่ระบบ'}
           </p>
 
           {linePairing && (
@@ -133,15 +185,33 @@ export default function LoginPage() {
             </div>
           )}
 
-          <div className={linePairing ? 'hidden' : 'grid grid-cols-3 gap-2 mb-6 p-1.5 bg-gray-100 rounded-[12px]'}>
+          {/* Role segmented control. Active tab gets a white card +
+              role-tint accent (top hairline bar + tinted icon). Quieter
+              than the previous "whole tab colored" treatment so the
+              brand-green submit button below is the loudest CTA. */}
+          <div className={linePairing ? 'hidden' : 'grid grid-cols-3 gap-1 mb-6 p-1 bg-gray-100 rounded-[12px]'}>
             {ROLES.map(r => {
               const Icon = r.icon
               const isActive = role === r.key
               return (
-                <button key={r.key} onClick={() => { setRole(r.key); setEmail(''); setError('') }}
-                  className={`flex flex-col items-center gap-1.5 py-2.5 px-2 rounded-[9px] text-xs font-medium transition-all ${isActive ? 'bg-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                  style={{ color: isActive ? r.color : undefined }}>
-                  <Icon size={16} />{r.label}
+                <button
+                  key={r.key}
+                  type="button"
+                  onClick={() => { setRole(r.key); setEmail(''); setError('') }}
+                  className={`relative flex flex-col items-center gap-1 py-2.5 px-2 rounded-[10px] text-xs font-medium transition-all ${
+                    isActive
+                      ? 'bg-white shadow-[0_1px_2px_rgba(0,0,0,0.06)] text-[#111110]'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {isActive && (
+                    <span
+                      className="absolute left-3 right-3 top-1 h-0.5 rounded-full"
+                      style={{ background: r.color }}
+                    />
+                  )}
+                  <Icon size={16} style={{ color: isActive ? r.color : undefined }} />
+                  {r.label}
                 </button>
               )
             })}
@@ -156,7 +226,18 @@ export default function LoginPage() {
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="label">อีเมล</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@gmail.com" className="input" required />
+              <div className="relative">
+                <IconMail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="your@gmail.com"
+                  className="input pl-9"
+                  autoComplete="email"
+                  required
+                />
+              </div>
             </div>
             <div>
               <div className="flex justify-between items-center mb-1.5">
@@ -164,22 +245,59 @@ export default function LoginPage() {
                 <Link href="/forgot-password" className="text-[11px] text-[#1D9E75] hover:underline">ลืมรหัสผ่าน?</Link>
               </div>
               <div className="relative">
-                <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" className="input pr-10" required />
-                <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <IconLock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <input
+                  type={showPw ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="input pl-9 pr-10"
+                  autoComplete="current-password"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPw(!showPw)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label={showPw ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
+                >
                   {showPw ? <IconEyeOff size={16} /> : <IconEye size={16} />}
                 </button>
               </div>
             </div>
-            <button type="submit" disabled={loading} className="btn btn-primary w-full justify-center py-3"
+            {/* Brand-green submit. Was role-tinted (purple for owner)
+                which clashed with the rest of the app; the role
+                accent now lives on the tab above and the icon next
+                to the role name on this button, keeping consistent
+                green for the actual primary action. */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-[10px] text-sm font-semibold text-white transition-all shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
               style={{
-                background: linePairing ? '#06C755' : selectedRole.color,
-                borderColor: linePairing ? '#06C755' : selectedRole.color,
-              }}>
-              {loading
-                ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                : linePairing ? 'ผูกบัญชี LINE' : 'เข้าสู่ระบบ'}
+                background: linePairing
+                  ? '#06C755'
+                  : 'linear-gradient(135deg, #1D9E75 0%, #0F6E56 100%)',
+              }}
+            >
+              {loading ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : linePairing ? (
+                <>
+                  <IconBrandLine size={16} /> ผูกบัญชี LINE
+                </>
+              ) : (
+                <>
+                  <selectedRole.icon size={15} />
+                  เข้าสู่ระบบในฐานะ{selectedRole.label}
+                </>
+              )}
             </button>
           </form>
+
+          <div className="mt-8 text-center text-[11px] text-gray-400">
+            พบปัญหาในการเข้าใช้งาน? ติดต่อ HR หรือเจ้าของระบบ
+          </div>
         </div>
       </div>
     </div>
