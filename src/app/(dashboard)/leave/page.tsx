@@ -1436,7 +1436,16 @@ function AdminRecordModal({ types, onClose, onSaved, onError }: {
       })
       onSaved()
     } catch (e: any) {
-      const msg = e?.response?.data?.message || 'บันทึกไม่สำเร็จ'
+      const data = e?.response?.data
+      const baseMsg = data?.message || 'บันทึกไม่สำเร็จ'
+      // Append the diagnostic envelope when the backend includes one
+      // (HR-only endpoints surface code/column to cut DB-drift debug
+      // loops). Keeps the modal copy-pasteable to a chat with us.
+      const dbg = data?.debug
+      const hint = dbg && (dbg.code || dbg.column || dbg.constraint)
+        ? ` [${[dbg.code, dbg.column && `col=${dbg.column}`, dbg.constraint && `c=${dbg.constraint}`].filter(Boolean).join(' ')}]`
+        : ''
+      const msg = baseMsg + hint
       setLocalErr(msg)
       onError(msg)
     } finally { setSaving(false) }
