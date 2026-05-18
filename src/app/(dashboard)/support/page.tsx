@@ -857,6 +857,7 @@ function TicketDetailModal({
       // open in case they want to send a follow-up.
       if (closeAfter) onClose()
     } catch (e: any) {
+      console.error('[support] respond failed:', e?.response?.status, e?.response?.data, e)
       flash(e?.response?.data?.message || 'ส่งคำตอบไม่สำเร็จ', false)
     } finally { busyRef.current = false; setBusy(false) }
   }
@@ -872,6 +873,7 @@ function TicketDetailModal({
       // the user back to the list with the visible state change.
       onClose()
     } catch (e: any) {
+      console.error('[support] close failed:', e?.response?.status, e?.response?.data, e)
       flash(e?.response?.data?.message || 'ปิดเรื่องไม่สำเร็จ', false)
     } finally { busyRef.current = false; setBusy(false) }
   }
@@ -886,6 +888,7 @@ function TicketDetailModal({
       // re-opened ticket — they almost always re-open in order to
       // add something.
     } catch (e: any) {
+      console.error('[support] reopen failed:', e?.response?.status, e?.response?.data, e)
       flash(e?.response?.data?.message || 'เปิดเรื่องไม่สำเร็จ', false)
     } finally { busyRef.current = false; setBusy(false) }
   }
