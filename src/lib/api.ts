@@ -327,6 +327,11 @@ export interface EmployeeUpdate {
   // Bank / payroll
   bankBranchCode?: string
   paymentMethod?: string
+  // Recurring payroll deductions — pulled into each new payslip
+  studentLoanId?: string
+  studentLoanMonthly?: number
+  depositMonthly?: number
+  depositAccumulated?: number
   // Free-form
   notes?: string
   hashtags?: string[]
@@ -599,9 +604,16 @@ export interface PayrollRecord {
   ot_amount: string | number | null
   bonus: string | number | null
   allowances: string | number | null
+  // New fields added with the FlowAccount-style slip layout. All
+  // default to 0 on the backend so existing slips keep the same net.
+  commission?: string | number | null
+  other_earnings?: string | number | null
   social_security: string | number | null
   income_tax: string | number | null
   other_deductions: string | number | null
+  student_loan?: string | number | null
+  deposit?: string | number | null
+  absent_late_deduction?: string | number | null
   net_salary: string | number | null
   work_days: number | null
   absent_days: number | null
@@ -646,9 +658,14 @@ export interface PayrollCreate {
   otAmount?: number
   bonus?: number
   allowances?: number
+  commission?: number
+  otherEarnings?: number
   socialSecurity?: number
   incomeTax?: number
   otherDeductions?: number
+  studentLoan?: number
+  deposit?: number
+  absentLateDeduction?: number
   workDays?: number
   absentDays?: number
   lateCount?: number
@@ -660,9 +677,14 @@ export interface PayrollUpdate {
   otAmount?: number
   bonus?: number
   allowances?: number
+  commission?: number
+  otherEarnings?: number
   socialSecurity?: number
   incomeTax?: number
   otherDeductions?: number
+  studentLoan?: number
+  deposit?: number
+  absentLateDeduction?: number
   workDays?: number
   absentDays?: number
   lateCount?: number

@@ -194,6 +194,11 @@ export default function EmployeeProfilePage() {
         contract_end_date: 'contractEndDate', employment_type: 'employmentType',
         start_date: 'startDate',
         bank_branch_code: 'bankBranchCode', payment_method: 'paymentMethod',
+        // Recurring payroll deductions — pulled into each new slip
+        student_loan_id: 'studentLoanId',
+        student_loan_monthly: 'studentLoanMonthly',
+        deposit_monthly: 'depositMonthly',
+        deposit_accumulated: 'depositAccumulated',
         notes: 'notes', hashtags: 'hashtags',
       }
       const payload: any = {}
@@ -486,12 +491,51 @@ export default function EmployeeProfilePage() {
           </Section>
 
           {isHR && (
-            <Section title="เงินเดือน (เจ้าของ/HR เท่านั้น)">
-              <Grid>
-                <Field label="เงินเดือนฐาน (บาท)" type="number" value={fieldValue('base_salary')?.toString() || ''}
-                  disabled={!canEditEmployment} onChange={v => setField('base_salary', v ? parseFloat(v) : undefined)} />
-              </Grid>
-            </Section>
+            <>
+              <Section title="เงินเดือน (เจ้าของ/HR เท่านั้น)">
+                <Grid>
+                  <Field label="เงินเดือนฐาน (บาท)" type="number" value={fieldValue('base_salary')?.toString() || ''}
+                    disabled={!canEditEmployment} onChange={v => setField('base_salary', v ? parseFloat(v) : undefined)} />
+                </Grid>
+              </Section>
+
+              {/* การหักประจำ — recurring deductions that get pulled
+                  into every new payslip. HR can still override the
+                  amount per-slip when needed (e.g. employee paid off
+                  the loan early in a given month). */}
+              <Section title="การหักประจำ (เข้าสลิปอัตโนมัติทุกเดือน)">
+                <Grid>
+                  <Field
+                    label="เลขผู้กู้ กยศ./กรอ."
+                    placeholder="เช่น 5403xxxxxxxxxx"
+                    value={fieldValue('student_loan_id') || ''}
+                    disabled={!canEditEmployment}
+                    onChange={v => setField('student_loan_id', v)}
+                  />
+                  <Field
+                    label="ยอดหัก กยศ./กรอ. ต่อเดือน (บาท)"
+                    type="number"
+                    value={fieldValue('student_loan_monthly')?.toString() || ''}
+                    disabled={!canEditEmployment}
+                    onChange={v => setField('student_loan_monthly', v ? parseFloat(v) : 0)}
+                  />
+                  <Field
+                    label="เงินประกันต่อเดือน (บาท)"
+                    type="number"
+                    value={fieldValue('deposit_monthly')?.toString() || ''}
+                    disabled={!canEditEmployment}
+                    onChange={v => setField('deposit_monthly', v ? parseFloat(v) : 0)}
+                  />
+                  <Field
+                    label="ยอดเงินประกันสะสม (บาท)"
+                    type="number"
+                    value={fieldValue('deposit_accumulated')?.toString() || ''}
+                    disabled={!canEditEmployment}
+                    onChange={v => setField('deposit_accumulated', v ? parseFloat(v) : 0)}
+                  />
+                </Grid>
+              </Section>
+            </>
           )}
         </div>
       )}
