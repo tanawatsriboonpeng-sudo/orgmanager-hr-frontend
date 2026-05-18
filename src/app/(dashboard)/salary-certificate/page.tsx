@@ -261,8 +261,13 @@ export default function SalaryCertificatePage() {
           </div>
         </div>
 
-        {/* Letter preview — prints */}
-        <div className="bg-white border border-gray-200 rounded-[12px] shadow-sm print:border-0 print:shadow-none print:rounded-none">
+        {/* Letter preview — the .print-doc-root class hooks into the
+            globals.css @media print rules: everything outside this
+            wrapper gets visibility:hidden, this wrapper gets pulled
+            out of the layout (position:absolute; inset:0) so the
+            sidebar / form column / chat widget all disappear and the
+            letter prints by itself on a clean page. */}
+        <div className="print-doc-root bg-white border border-gray-200 rounded-[12px] shadow-sm print:border-0 print:shadow-none print:rounded-none">
           <div className="px-12 py-14 print:px-12 print:py-12 max-w-[210mm] mx-auto text-[15px] leading-[1.9] text-[#111110]">
             {/* Company header — top right block */}
             <div className="text-right mb-10">
@@ -317,18 +322,6 @@ export default function SalaryCertificatePage() {
         </div>
       </div>
 
-      {/* Print-specific tweaks. Tailwind's print: prefix handles most
-          things, but A4 sizing + margin needs raw CSS. */}
-      <style jsx global>{`
-        @media print {
-          @page { size: A4; margin: 18mm 16mm; }
-          body { background: white !important; }
-          /* Strip the sidebar / topbar — anything outside this page's
-             tree is wrapped in .print:hidden via the layout, but as a
-             safety net we also hide common chrome IDs if present. */
-          aside, nav, header { display: none !important; }
-        }
-      `}</style>
     </div>
   )
 }

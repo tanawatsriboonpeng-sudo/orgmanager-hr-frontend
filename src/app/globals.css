@@ -225,6 +225,12 @@ body {
   body * {
     visibility: hidden;
   }
+  /* Generic class — slap .print-doc-root on the wrapper of any
+     printable document (payslip, salary cert, future PDFs, ...).
+     `payslip-print-root` is kept as a back-compat alias so older
+     pages don't regress while we migrate. */
+  body:has(.print-doc-root) .print-doc-root,
+  body:has(.print-doc-root) .print-doc-root *,
   body:has(.payslip-print-root) .payslip-print-root,
   body:has(.payslip-print-root) .payslip-print-root * {
     visibility: visible;
@@ -233,6 +239,7 @@ body {
   /* Re-flow the doc: take the print root out of the modal /
      overflow containers and lay it out as a normal flow at
      the top of the page. */
+  body:has(.print-doc-root) .print-doc-root,
   body:has(.payslip-print-root) .payslip-print-root {
     position: absolute;
     inset: 0;
@@ -252,6 +259,8 @@ body {
   }
 
   /* Avoid page-break inside individual columns / rows. */
+  .print-doc-root .grid > div,
+  .print-doc-root tr,
   .payslip-print-root .grid > div,
   .payslip-print-root tr {
     break-inside: avoid;
@@ -259,9 +268,11 @@ body {
 
   /* Keep the three-column layout on print even if the viewport
      would have collapsed it to one column in screen CSS. */
+  .print-doc-root .lg\:grid-cols-3,
   .payslip-print-root .lg\:grid-cols-3 {
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   }
+  .print-doc-root .sm\:grid-cols-2,
   .payslip-print-root .sm\:grid-cols-2 {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
@@ -269,10 +280,14 @@ body {
   /* Tighten the badge palette — green Net pay is the only
      accent that should survive; everything else prints black
      on white. */
+  .print-doc-root,
+  .print-doc-root *,
   .payslip-print-root,
   .payslip-print-root * {
     color: black !important;
   }
+  .print-doc-root .text-\[\#0F6E56\],
+  .print-doc-root .text-\[\#085041\],
   .payslip-print-root .text-\[\#0F6E56\],
   .payslip-print-root .text-\[\#085041\] {
     color: #0F6E56 !important;
@@ -280,6 +295,7 @@ body {
 
   /* Drop shadow + heavy backgrounds — they don't print well
      and waste toner. */
+  .print-doc-root *,
   .payslip-print-root * {
     box-shadow: none !important;
     text-shadow: none !important;
