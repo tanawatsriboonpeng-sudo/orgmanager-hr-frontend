@@ -5,7 +5,7 @@ import { useAuthStore } from '@/lib/store'
 import {
   IconEye, IconEyeOff, IconCrown, IconUsers, IconUser,
   IconAlertCircle, IconBuilding, IconBrandLine,
-  IconMail, IconLock, IconCheck,
+  IconMail, IconLock,
 } from '@tabler/icons-react'
 import Link from 'next/link'
 
@@ -77,21 +77,19 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#F7F7F5] flex">
       {/* ============================================================
-          LEFT — brand panel (desktop only). Layered gradient + a
-          decorative blob in the corner to give the flat green some
-          depth without distracting from the form. Footer line + a
-          tinted divider above the feature list anchor the layout.
+          LEFT — minimal brand panel (desktop only). Just the logo
+          and the headline; no feature list, no subtitle, no footer.
+          The form on the right is the focus.
           ============================================================ */}
-      <div className="hidden lg:flex flex-col justify-between w-[460px] p-10 text-white flex-shrink-0 relative overflow-hidden">
-        {/* Layered background — base, deeper top-right glow, soft
-            bottom-left blob. Pure CSS so it doesn't add a network
-            request and survives offline / poor connections. */}
+      <div className="hidden lg:flex flex-col justify-center w-[460px] p-10 text-white flex-shrink-0 relative overflow-hidden">
+        {/* Layered background — base + a soft glow in each corner so
+            the flat green has some quiet depth. */}
         <div className="absolute inset-0 bg-gradient-to-br from-[#0F6E56] via-[#0F6E56] to-[#0A5340]" />
         <div className="absolute -top-32 -right-24 w-80 h-80 rounded-full bg-[#1D9E75]/30 blur-3xl" />
         <div className="absolute -bottom-24 -left-16 w-72 h-72 rounded-full bg-[#06C755]/15 blur-3xl" />
 
         <div className="relative">
-          <div className="flex items-center gap-3 mb-14">
+          <div className="flex items-center gap-3 mb-10">
             <div className="w-10 h-10 bg-white/15 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-sm">
               <IconBuilding size={20} />
             </div>
@@ -100,35 +98,10 @@ export default function LoginPage() {
               <div className="text-white/60 text-[11px]">HR System</div>
             </div>
           </div>
-          <h1 className="text-[40px] font-semibold leading-[1.15] mb-5 tracking-tight">
+          <h1 className="text-[40px] font-semibold leading-[1.15] tracking-tight">
             ระบบบริหาร<br />
             <span className="text-white/90">บุคคลครบวงจร</span>
           </h1>
-          <p className="text-white/75 text-sm leading-relaxed max-w-[340px]">
-            บริษัท สิริคอนส์ คอนสตรัคชั่น จำกัด · จัดการพนักงาน
-            เช็คอิน ลงเวลา การลา และเงินเดือนในที่เดียว
-          </p>
-        </div>
-
-        <div className="relative">
-          <div className="border-t border-white/10 pt-5 space-y-3">
-            {[
-              '12 โมดูลครบในแอปเดียว',
-              'เช็คอินด้วย GPS รัศมี 60 เมตร',
-              'สลิปเงินเดือนดิจิทัล',
-              'Dashboard แบบเรียลไทม์',
-            ].map(f => (
-              <div key={f} className="flex items-center gap-2.5 text-[13px] text-white/85">
-                <div className="w-5 h-5 rounded-full bg-white/15 flex items-center justify-center flex-shrink-0">
-                  <IconCheck size={11} className="text-white" />
-                </div>
-                {f}
-              </div>
-            ))}
-          </div>
-          <div className="mt-6 text-[10px] text-white/40">
-            © {new Date().getFullYear()} สิริคอนส์ คอนสตรัคชั่น
-          </div>
         </div>
       </div>
 
