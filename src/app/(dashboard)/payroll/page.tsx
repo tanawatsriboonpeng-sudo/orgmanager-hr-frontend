@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { payrollApi, employeeApi, otApi, type PayrollRecord, type PayrollStatus, type OtBreakdownItem } from '@/lib/api'
+import { payrollApi, employeeApi, otApi, orgApi, type PayrollRecord, type PayrollStatus, type OtBreakdownItem } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
   IconPlus, IconCheck, IconCash, IconTrash, IconReceipt2,
@@ -612,6 +612,27 @@ function SlipDetailModal({
     return () => { alive = false }
   }, [record.id])
 
+  // Company info — once per modal open. Cheap singleton fetch from
+  // /org-settings (owner-managed). Fed into the slip header so the
+  // printed document looks like a real company doc instead of a
+  // generic "payroll modal."
+  const [company, setCompany] = useState<{ name?: string | null; address?: string | null; taxId?: string | null }>({})
+  useEffect(() => {
+    let alive = true
+    orgApi.get()
+      .then(r => {
+        if (!alive) return
+        const d = r.data?.data
+        setCompany({
+          name: d?.company_name,
+          address: d?.company_address,
+          taxId: d?.company_tax_id,
+        })
+      })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
+
   const save = async () => {
     setBusy(true)
     try {
@@ -680,49 +701,62 @@ function SlipDetailModal({
 
   return (
     <ModalShell onClose={onClose} title="" wide>
-      {/* Header */}
-      <div className="flex items-center gap-3 pb-4 border-b border-black/[0.06]">
-        <EmployeeAvatar person={record} size={48} />
-        <div className="flex-1 min-w-0">
-          <div className="text-base font-semibold text-[#111110]">
-            {record.first_name} {record.last_name}
-          </div>
-          <div className="text-xs text-gray-500">
-            {record.position || '—'} · {record.department_name || '—'}
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-xs text-gray-500">{MONTHS_TH[record.month - 1]} {record.year + 543}</div>
-          <span className={clsx('badge mt-1', STATUS_BADGE[record.status])}>
-            {STATUS_TH[record.status]}
-          </span>
-        </div>
-      </div>
-
-      {/* Body */}
+      {/* Edit mode still wants the identifying header (which employee
+          + which month + status badge). View mode hides it — the
+          SlipReadOnly renders its own document-style header that
+          replaces the chrome. Keeping it would duplicate the name. */}
       {editing && canManage ? (
-        <div className="py-4">
-          <SlipAmountsForm
-            form={form}
-            setForm={setForm}
-            otContext={{ employeeId: record.employee_id, month: record.month, year: record.year }}
-          />
-          <div className="mt-4">
-            <label className="label">หมายเหตุ</label>
-            <textarea
-              className="input min-h-[60px]"
-              value={form.notes}
-              onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
-            />
+        <>
+          <div className="flex items-center gap-3 pb-4 border-b border-black/[0.06] print:hidden">
+            <EmployeeAvatar person={record} size={48} />
+            <div className="flex-1 min-w-0">
+              <div className="text-base font-semibold text-[#111110]">
+                {record.first_name} {record.last_name}
+              </div>
+              <div className="text-xs text-gray-500">
+                {record.position || '—'} · {record.department_name || '—'}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs text-gray-500">{MONTHS_TH[record.month - 1]} {record.year + 543}</div>
+              <span className={clsx('badge mt-1', STATUS_BADGE[record.status])}>
+                {STATUS_TH[record.status]}
+              </span>
+            </div>
           </div>
-          <NetPreview form={form} />
-        </div>
+          <div className="py-4">
+            <SlipAmountsForm
+              form={form}
+              setForm={setForm}
+              otContext={{ employeeId: record.employee_id, month: record.month, year: record.year }}
+            />
+            <div className="mt-4">
+              <label className="label">หมายเหตุ</label>
+              <textarea
+                className="input min-h-[60px]"
+                value={form.notes}
+                onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+              />
+            </div>
+            <NetPreview form={form} />
+          </div>
+        </>
       ) : (
-        <SlipReadOnly record={record} otBreakdown={otBreakdown} />
+        <div className="payslip-print-root">
+          {/* Status badge floats top-right while viewing — small,
+              so it doesn't compete with the document title but
+              still signals draft/approved/paid at a glance. */}
+          <div className="flex justify-end -mb-2 print:hidden">
+            <span className={clsx('badge', STATUS_BADGE[record.status])}>
+              {STATUS_TH[record.status]}
+            </span>
+          </div>
+          <SlipReadOnly record={record} otBreakdown={otBreakdown} company={company} />
+        </div>
       )}
 
       {/* Footer actions */}
-      <div className="flex flex-wrap gap-2 justify-end pt-4 border-t border-black/[0.06] mt-2">
+      <div className="flex flex-wrap gap-2 justify-end pt-4 border-t border-black/[0.06] mt-2 print:hidden">
         {!canManage ? (
           <>
             {liffReady && isPaid && (
@@ -799,65 +833,231 @@ function SlipDetailModal({
   )
 }
 
-function SlipReadOnly({ record, otBreakdown }: { record: PayrollRecord; otBreakdown?: OtBreakdownItem[] | null }) {
-  const additions = toNum(record.base_salary) + toNum(record.ot_amount) + toNum(record.bonus) + toNum(record.allowances)
-  const deductions = toNum(record.social_security) + toNum(record.income_tax) + toNum(record.other_deductions)
+// Bilingual two-line label used in the three columns of the FlowAccount-
+// style slip. Thai on top in solid black, English secondary line in
+// muted gray. Compact enough to fit alongside the right-aligned amount.
+function BiLabel({ th, en }: { th: string; en: string }) {
   return (
-    <div className="py-4 grid grid-cols-1 md:grid-cols-2 gap-5">
-      <div>
-        <h3 className="text-xs font-semibold text-gray-500 mb-2">รายรับ</h3>
-        <Row label="เงินเดือนพื้นฐาน" value={record.base_salary} />
-        <Row label="ค่าล่วงเวลา (OT)" value={record.ot_amount} sub={`${toNum(record.ot_hours)} ชม.`} />
-        <OtBreakdownPanel breakdown={otBreakdown} totalHours={toNum(record.ot_hours)} totalAmount={toNum(record.ot_amount)} />
-        <Row label="โบนัส" value={record.bonus} />
-        <Row label="เบี้ยเลี้ยง/อื่นๆ" value={record.allowances} />
-        <Row label="รวมรายรับ" value={additions} bold />
-      </div>
-      <div>
-        <h3 className="text-xs font-semibold text-gray-500 mb-2">รายการหัก</h3>
-        <Row label="ประกันสังคม" value={record.social_security} negative />
-        <Row label="ภาษี" value={record.income_tax} negative />
-        <Row label="หักอื่นๆ" value={record.other_deductions} negative />
-        <Row label="รวมรายการหัก" value={deductions} bold negative />
+    <div className="leading-tight">
+      <div className="text-[12px] text-[#111110]">{th}</div>
+      <div className="text-[10px] text-gray-400">{en}</div>
+    </div>
+  )
+}
 
-        <h3 className="text-xs font-semibold text-gray-500 mb-2 mt-4">สถิติ</h3>
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="bg-gray-50 rounded p-2">
-            <div className="text-gray-500">วันทำงาน</div>
-            <div className="font-medium">{record.work_days ?? '—'} วัน</div>
+// One row inside the earnings / deductions / YTD column. Bold = the
+// last "รวม" line in each column. Footer net-pay row uses its own
+// renderer below so it can be bigger + green.
+function SlipRow({ th, en, value, bold }: {
+  th: string; en: string; value: any; bold?: boolean
+}) {
+  return (
+    <div className={clsx(
+      'flex items-start justify-between gap-3 py-1.5',
+      bold && 'border-t border-black/[0.08] mt-1 pt-2 font-semibold',
+    )}>
+      <BiLabel th={th} en={en} />
+      <span className="tabular-nums text-[13px] text-[#111110] whitespace-nowrap">
+        {fmtMoney(value)}
+      </span>
+    </div>
+  )
+}
+
+function SlipReadOnly({
+  record, otBreakdown, company,
+}: {
+  record: PayrollRecord
+  otBreakdown?: OtBreakdownItem[] | null
+  company?: { name?: string | null; address?: string | null; taxId?: string | null }
+}) {
+  const totalEarnings   = toNum(record.base_salary) + toNum(record.ot_amount) + toNum(record.bonus) + toNum(record.allowances)
+  const totalDeductions = toNum(record.social_security) + toNum(record.income_tax) + toNum(record.other_deductions)
+
+  // YTD totals — fetch all this employee's paid/approved slips for the
+  // same Gregorian year and sum the relevant fields. Computing on the
+  // frontend avoids a backend change just for this slip view.
+  const [ytd, setYtd] = useState<{
+    earnings: number; withholding: number; ssf: number;
+  } | null>(null)
+  useEffect(() => {
+    let alive = true
+    if (!record.employee_id || !record.year) return
+    payrollApi.list({ employeeId: record.employee_id, year: record.year })
+      .then(r => {
+        if (!alive) return
+        const rows: PayrollRecord[] = r.data.data || []
+        // Sum across paid + approved slips up to and INCLUDING this
+        // month (later months in the year, if any, are excluded — they
+        // shouldn't count toward YTD of the slip currently being
+        // viewed). draft is excluded by design.
+        const acc = rows.reduce(
+          (a, x) => {
+            if (!x.status || x.status === 'draft') return a
+            if (typeof x.month !== 'number' || typeof record.month !== 'number') return a
+            if (x.month > record.month) return a
+            a.earnings    += toNum(x.base_salary) + toNum(x.ot_amount) + toNum(x.bonus) + toNum(x.allowances)
+            a.withholding += toNum(x.income_tax)
+            a.ssf         += toNum(x.social_security)
+            return a
+          },
+          { earnings: 0, withholding: 0, ssf: 0 },
+        )
+        setYtd(acc)
+      })
+      .catch(() => { if (alive) setYtd({ earnings: 0, withholding: 0, ssf: 0 }) })
+    return () => { alive = false }
+  }, [record.employee_id, record.year, record.month])
+
+  const employeeName = `${record.first_name || ''} ${record.last_name || ''}`.trim() || '—'
+  const empCode = record.emp_code ? ` (${record.emp_code})` : ''
+  const periodLabel = (typeof record.month === 'number' && typeof record.year === 'number')
+    ? `01–${dayjs(`${record.year}-${String(record.month).padStart(2, '0')}-01`).endOf('month').format('D')} ${MONTHS_TH[record.month - 1].slice(0, 3)}. ${record.year + 543}`
+    : '—'
+  const payDateLabel = record.paid_at
+    ? dayjs(record.paid_at).format('D MMM BBBB')
+    : '—'
+  const ytdYearLabel = record.year ? `ปี ${record.year + 543}` : 'ปีปัจจุบัน'
+
+  return (
+    <div className="py-2">
+      {/* ============================================================
+          HEADER — three info groups across the top: company on left,
+          document title on right, identity rows in the middle.
+          ============================================================ */}
+      <div className="flex items-start justify-between gap-4 pb-4">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-[#111110] truncate">
+            {company?.name || 'บริษัท'}
           </div>
-          <div className="bg-gray-50 rounded p-2">
-            <div className="text-gray-500">ขาดงาน</div>
-            <div className="font-medium">{record.absent_days} วัน</div>
+          {company?.address && (
+            <div className="text-[10px] text-gray-500 leading-snug whitespace-pre-line line-clamp-2">
+              {company.address}
+            </div>
+          )}
+        </div>
+        <div className="text-right flex-shrink-0">
+          <div className="text-lg font-semibold text-[#111110]">สลิปเงินเดือน</div>
+          <div className="text-[11px] text-gray-400 -mt-0.5">Pay Slip</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 pb-5 border-b border-black/[0.08]">
+        <SlipMeta th="ชื่อ-นามสกุล (รหัส)" en="Emp. name (Code)" value={`${employeeName}${empCode}`} />
+        <SlipMeta th="รอบเงินเดือน" en="Payroll Period" value={periodLabel} />
+        <SlipMeta th="ตำแหน่ง" en="Position" value={record.position || '—'} />
+        <SlipMeta th="วันที่ชำระ" en="Payment Date" value={payDateLabel} />
+        {record.bank_account && (
+          <SlipMeta th="เลขที่บัญชี" en="Bank Account" value={record.bank_account} />
+        )}
+      </div>
+
+      {/* ============================================================
+          THREE-COLUMN BODY — earnings | deductions | YTD.
+          Two-column on tablet width (YTD wraps under); three-column
+          on desktop print width. The summary rows (รวมเงินได้ / รวม
+          รายการหัก / เงินได้สุทธิ) live in the YTD column so they
+          line up vertically with the running totals.
+          ============================================================ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4 pt-4">
+        {/* Earnings */}
+        <div>
+          <div className="flex items-center justify-between border-b border-black/[0.12] pb-1.5 mb-1">
+            <BiLabel th="เงินได้" en="Earnings" />
           </div>
-          <div className="bg-gray-50 rounded p-2">
-            <div className="text-gray-500">มาสาย</div>
-            <div className="font-medium">{record.late_count} ครั้ง</div>
+          <SlipRow th="เงินเดือน / ค่าจ้าง" en="Salary/Wage"           value={record.base_salary} />
+          <SlipRow th="ค่าล่วงเวลา"          en="Overtime"             value={record.ot_amount} />
+          <SlipRow th="ค่านายหน้า"           en="Commission"           value={0} />
+          <SlipRow th="ค่าเบี้ยเลี้ยง / ค่าครองชีพ" en="Allowances / Cost of livings" value={record.allowances} />
+          <SlipRow th="โบนัส"                en="Bonus"                value={record.bonus} />
+          <SlipRow th="เงินได้อื่นๆ"          en="Others"               value={0} />
+        </div>
+
+        {/* Deductions */}
+        <div>
+          <div className="flex items-center justify-between border-b border-black/[0.12] pb-1.5 mb-1">
+            <BiLabel th="รายการหัก" en="Deductions" />
           </div>
-          <div className="bg-gray-50 rounded p-2">
-            <div className="text-gray-500">OT</div>
-            <div className="font-medium">{toNum(record.ot_hours)} ชม.</div>
+          <SlipRow th="ประกันสังคม"          en="Social Security Fund" value={record.social_security} />
+          <SlipRow th="ภาษีหัก ณ ที่จ่าย"     en="Withholding tax"      value={record.income_tax} />
+          <SlipRow th="เงินกู้ยืม กยศ./กรอ."  en="Student Loan Fund"    value={0} />
+          <SlipRow th="เงินประกัน"           en="Deposit"              value={0} />
+          <SlipRow th="ขาด / ลา / มาสาย"     en="Absent / Leave / Late" value={0} />
+          <SlipRow th="รายการหักอื่นๆ"        en="Others"               value={record.other_deductions} />
+        </div>
+
+        {/* YTD + summary */}
+        <div>
+          <div className="flex items-center justify-between border-b border-black/[0.12] pb-1.5 mb-1">
+            <BiLabel th={ytdYearLabel} en={record.year ? String(record.year) : ''} />
+          </div>
+          <SlipRow th="เงินได้สะสม"           en="YTD earnings"         value={ytd?.earnings ?? 0} />
+          <SlipRow th="ภาษีหัก ณ ที่จ่ายสะสม" en="YTD Withholding tax"  value={ytd?.withholding ?? 0} />
+          <SlipRow th="เงินประกันสังคมสะสม"   en="Accumulated SSF"      value={ytd?.ssf ?? 0} />
+          <SlipRow th="รวมเงินได้"            en="Total earnings"       value={totalEarnings} bold />
+          <SlipRow th="รวมรายการหัก"          en="Total deductions"     value={totalDeductions} bold />
+          {/* Net pay — bigger + green so the eye lands on it. */}
+          <div className="mt-1 pt-2 border-t-2 border-[#0F6E56]/30 flex items-start justify-between gap-3">
+            <BiLabel th="เงินได้สุทธิ" en="Net pay" />
+            <span className="tabular-nums text-base font-bold text-[#0F6E56] whitespace-nowrap">
+              {fmtMoney(record.net_salary)}
+            </span>
           </div>
         </div>
       </div>
 
-      <div className="md:col-span-2 mt-2 p-4 rounded-[10px] bg-[#E1F5EE] flex items-center justify-between">
-        <div className="text-sm text-[#085041]">เงินเดือนสุทธิ</div>
-        <div className="text-2xl font-bold text-[#085041] tabular-nums">฿{fmtMoney(record.net_salary)}</div>
+      {/* OT breakdown — kept (collapsed by default) below the table
+          so the auditor can trace the OT amount if they want. */}
+      <div className="mt-4 pt-3 border-t border-black/[0.04]">
+        <OtBreakdownPanel
+          breakdown={otBreakdown}
+          totalHours={toNum(record.ot_hours)}
+          totalAmount={toNum(record.ot_amount)}
+        />
       </div>
 
-      {record.notes && (
-        <div className="md:col-span-2">
-          <div className="text-xs text-gray-500 mb-1">หมายเหตุ</div>
-          <div className="text-sm text-gray-700 whitespace-pre-wrap">{record.notes}</div>
+      {/* ============================================================
+          FOOTER — remarks (left) + signature line (right).
+          Bottom legal notice spans both, centered.
+          ============================================================ */}
+      <div className="mt-6 pt-4 grid grid-cols-2 gap-6">
+        <div>
+          <div className="text-[11px] text-gray-500 mb-1">
+            หมายเหตุ <span className="text-gray-300">/ Remarks</span>
+          </div>
+          <div className="text-[12px] text-gray-700 whitespace-pre-wrap min-h-[40px]">
+            {record.notes || '—'}
+          </div>
         </div>
-      )}
+        <div>
+          <div className="text-[11px] text-gray-500 mb-1">
+            ลายเซ็นผู้จ่ายเงิน <span className="text-gray-300">/ Employer's Signature</span>
+          </div>
+          <div className="mt-8 border-t border-gray-300" />
+        </div>
+      </div>
 
-      {record.paid_at && (
-        <div className="md:col-span-2 text-xs text-gray-500">
-          จ่ายเมื่อ {dayjs(record.paid_at).format('D MMM BBBB HH:mm')}
-        </div>
-      )}
+      <div className="mt-6 pt-3 border-t border-black/[0.04] text-center text-[10px] text-gray-400 leading-snug">
+        ข้อมูลเงินเดือนและค่าจ้างเป็นข้อมูลส่วนบุคคล ห้ามเปิดเผยโดยเด็ดขาด
+        เอกสารนี้จะสมบูรณ์เมื่อผ่านการเซ็นผู้มีอำนาจลงนามและตราประทับเท่านั้น<br />
+        Salary and wages are confidential information. Disclosure is strictly prohibited.
+        This document is only valid with an authorized signature and company stamp.
+      </div>
+    </div>
+  )
+}
+
+// Two-line label + value used in the slip header.
+function SlipMeta({ th, en, value }: { th: string; en: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="flex-shrink-0 w-[140px]">
+        <div className="text-[11px] text-gray-500 leading-tight">{th}</div>
+        <div className="text-[9px] text-gray-300 leading-tight">{en}</div>
+      </div>
+      <div className="text-[12px] text-[#111110] font-medium flex-1 min-w-0 break-words">
+        {value}
+      </div>
     </div>
   )
 }
