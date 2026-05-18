@@ -17,9 +17,15 @@ interface SelfieModalProps {
   onClose: () => void
   onSubmit: (data: { dataUrl: string; offsite: boolean; reason?: string }) => void
   busy: boolean
+  // What action the modal is wrapping — flips labels + the checkbox
+  // wording so the user knows which step they're on. Defaults to
+  // 'checkin' to preserve the original behavior.
+  mode?: 'checkin' | 'checkout'
 }
 
-export default function SelfieModal({ onClose, onSubmit, busy }: SelfieModalProps) {
+export default function SelfieModal({ onClose, onSubmit, busy, mode = 'checkin' }: SelfieModalProps) {
+  const isCheckout = mode === 'checkout'
+  const actionLabel = isCheckout ? 'เช็คเอาท์' : 'เช็คอิน'
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const [phase, setPhase] = useState<'starting' | 'live' | 'preview' | 'error'>('starting')
@@ -116,7 +122,7 @@ export default function SelfieModal({ onClose, onSubmit, busy }: SelfieModalProp
       >
         <div className="flex items-center justify-between p-4 border-b border-black/[0.06]">
           <h2 className="text-base font-semibold text-[#111110]">
-            {phase === 'preview' ? 'ตรวจสอบรูปก่อนเช็คอิน' : 'ถ่ายเซลฟี่เพื่อเช็คอิน'}
+            {phase === 'preview' ? `ตรวจสอบรูปก่อน${actionLabel}` : `ถ่ายเซลฟี่เพื่อ${actionLabel}`}
           </h2>
           <button onClick={onClose} className="btn btn-ghost p-1.5" aria-label="ปิด">
             <IconX size={16} />
@@ -179,7 +185,7 @@ export default function SelfieModal({ onClose, onSubmit, busy }: SelfieModalProp
                   onChange={e => setOffsite(e.target.checked)}
                 />
                 <span className="text-[12px] text-gray-700 leading-snug">
-                  ลงเวลานอกสถานที่ (ทำงานนอกออฟฟิศ)
+                  {isCheckout ? 'เช็คเอาท์นอกสถานที่ (อยู่นอกออฟฟิศ)' : 'ลงเวลานอกสถานที่ (ทำงานนอกออฟฟิศ)'}
                   <span className="block text-[11px] text-gray-400">
                     ต้องระบุเหตุผลและรอ HR/เจ้าของอนุมัติ
                   </span>
@@ -211,7 +217,7 @@ export default function SelfieModal({ onClose, onSubmit, busy }: SelfieModalProp
                   disabled={busy || (offsite && !reason.trim())}
                   className="btn btn-primary justify-center py-3 disabled:opacity-50"
                 >
-                  <IconCheck size={16} /> {busy ? 'กำลังส่ง…' : (offsite ? 'ส่งคำขอ' : 'เช็คอิน')}
+                  <IconCheck size={16} /> {busy ? 'กำลังส่ง…' : (offsite ? 'ส่งคำขอ' : actionLabel)}
                 </button>
               </div>
             </>

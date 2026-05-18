@@ -253,10 +253,10 @@ export default function AttendancePage() {
   }
 
   // Selfie capture flow: opens a modal with a live webcam preview, lets
-  // the user snap a frame, then submits the check-in with the JPEG dataURL
-  // attached. Kept separate from doCheckIn so the camera modal can call
-  // the same submit path on its own schedule.
-  const [showSelfie, setShowSelfie] = useState(false)
+  // the user snap a frame, then submits the check-in/out with the JPEG
+  // dataURL attached. selfieMode tells the modal whether the user is
+  // checking IN or OUT — flips its labels + which submit path runs.
+  const [selfieMode, setSelfieMode] = useState<'checkin' | 'checkout' | null>(null)
 
   const doCheckIn = async (selfie?: string) => {
     setActing(true)
@@ -290,14 +290,30 @@ export default function AttendancePage() {
     } finally { setActing(false) }
   }
 
-  const doCheckOut = async () => {
+  const doCheckOut = async (selfie?: string) => {
     setActing(true)
     try {
-      const res = await attendanceApi.checkOut(coords?.lat, coords?.lng)
+      const res = await attendanceApi.checkOut(coords?.lat, coords?.lng, 'gps', selfie)
       flash(res.data.message)
       loadToday(); loadDaily()
     } catch (e: any) {
       flash(e.response?.data?.message || 'เช็คเอาท์ไม่สำเร็จ', false)
+    } finally { setActing(false) }
+  }
+
+  // Off-site checkout — when the employee is leaving from outside
+  // the radius (client site, field work). Same pending-approval flow
+  // as offsite check-in.
+  const doCheckOutOffsite = async (selfie: string, reason: string) => {
+    setActing(true)
+    try {
+      const res = await attendanceApi.checkOutOffsite({
+        lat: coords?.lat, lng: coords?.lng, selfie, reason,
+      })
+      flash(res.data.message)
+      loadToday(); loadDaily()
+    } catch (e: any) {
+      flash(e.response?.data?.message || 'ส่งคำขอไม่สำเร็จ', false)
     } finally { setActing(false) }
   }
 
@@ -419,7 +435,23 @@ export default function AttendancePage() {
                   {todayLog.check_out_at && (
                     <div className="flex justify-between mb-1.5">
                       <span className="text-gray-600">เวลาออก</span>
-                      <span className="font-medium tabular-nums">{dayjs(todayLog.check_out_at).format('HH:mm น.')}</span>
+                      <span className="font-medium tabular-nums flex items-center gap-1.5 justify-end">
+                        {dayjs(todayLog.check_out_at).format('HH:mm น.')}
+                        {todayLog.check_out_status && (
+                          <span className={clsx(
+                            'px-1.5 py-0.5 rounded-full border text-[10px] font-medium',
+                            todayLog.check_out_status === 'early'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : todayLog.check_out_status === 'overtime'
+                                ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          )}>
+                            {todayLog.check_out_status === 'early' ? 'ออกก่อนเวลา'
+                              : todayLog.check_out_status === 'overtime' ? 'อยู่หลังเลิกงาน'
+                              : 'ออกตรงเวลา'}
+                          </span>
+                        )}
+                      </span>
                     </div>
                   )}
                   {todayLog.work_hours && (
@@ -545,7 +577,7 @@ export default function AttendancePage() {
                   modal just to discover the user is out of radius. */}
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => setShowSelfie(true)}
+                  onClick={() => setSelfieMode('checkin')}
                   disabled={!canCheckIn || acting || locStatus !== 'ok'}
                   className="btn btn-primary justify-center py-3 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -553,7 +585,7 @@ export default function AttendancePage() {
                   เช็คอิน
                 </button>
                 <button
-                  onClick={() => doCheckOut()}
+                  onClick={() => setSelfieMode('checkout')}
                   disabled={!canCheckOut || acting || locStatus !== 'ok'}
                   className="btn justify-center py-3 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -699,13 +731,20 @@ export default function AttendancePage() {
         </>
       )}
 
-      {showSelfie && (
+      {selfieMode && (
         <SelfieModal
-          onClose={() => setShowSelfie(false)}
+          mode={selfieMode}
+          onClose={() => setSelfieMode(null)}
           onSubmit={async ({ dataUrl, offsite, reason }) => {
-            setShowSelfie(false)
-            if (offsite) await doCheckInOffsite(dataUrl, reason || '')
-            else         await doCheckIn(dataUrl)
+            const m = selfieMode
+            setSelfieMode(null)
+            if (m === 'checkout') {
+              if (offsite) await doCheckOutOffsite(dataUrl, reason || '')
+              else         await doCheckOut(dataUrl)
+            } else {
+              if (offsite) await doCheckInOffsite(dataUrl, reason || '')
+              else         await doCheckIn(dataUrl)
+            }
           }}
           busy={acting}
         />

@@ -115,8 +115,13 @@ export const attendanceApi = {
   // HR/owner approves. Selfie + reason are mandatory for review.
   checkInOffsite: (data: { lat?: number; lng?: number; selfie: string; reason: string }) =>
     api.post('/attendance/check-in', { ...data, method: 'gps', offsite: true }),
-  checkOut: (lat?: number, lng?: number) =>
-    api.post('/attendance/check-out', { lat, lng }),
+  // Check-out now mirrors check-in — selfie + GPS required. Same
+  // shape so the SelfieModal can call either path.
+  checkOut: (lat?: number, lng?: number, method = 'gps', selfie?: string) =>
+    api.post('/attendance/check-out', { lat, lng, method, selfie }),
+  // Off-site checkout — same offsite-pending flow as check-in.
+  checkOutOffsite: (data: { lat?: number; lng?: number; selfie: string; reason: string }) =>
+    api.post('/attendance/check-out', { ...data, method: 'gps', offsite: true }),
   today: () => api.get('/attendance/today'),
   myHistory: (month?: number, year?: number) =>
     api.get('/attendance/my-history', { params: { month, year } }),
@@ -1058,6 +1063,33 @@ export const supportApi = {
     api.post(`/support/tickets/${id}/respond`, { response, closeAfter }),
   close: (id: string) => api.post(`/support/tickets/${id}/close`),
   reopen: (id: string) => api.post(`/support/tickets/${id}/reopen`),
+}
+
+// ====== AI CHATBOT ======
+// Lightweight client for the /ai/chat assistant. Messages are sent as a
+// flat history; the backend handles tool use + scoping to the caller.
+export type AIRole = 'user' | 'assistant'
+export interface AIChatMessage { role: AIRole; content: string }
+export interface AIChatReply {
+  reply: string
+  model: string
+  iterations: number
+  stop_reason: string
+  usage: {
+    message_count_today: number
+    daily_quota: number
+    tokens: {
+      input_tokens: number
+      output_tokens: number
+      cache_creation_input_tokens: number
+      cache_read_input_tokens: number
+    }
+  }
+}
+export const aiApi = {
+  status: () => api.get<{ success: boolean; data: { enabled: boolean; model: string; daily_quota: number; used_today: number } }>('/ai/status'),
+  chat: (messages: AIChatMessage[]) =>
+    api.post<{ success: boolean; data: AIChatReply }>('/ai/chat', { messages }),
 }
 
 export default api
