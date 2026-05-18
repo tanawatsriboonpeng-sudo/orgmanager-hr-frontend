@@ -85,6 +85,41 @@ function StatCard({
   )
 }
 
+// Category filter chip with an inline count. 0-count chips dim out
+// so the eye is drawn to the categories that actually have rows,
+// but they stay clickable (the count may be 0 only because the
+// current status filter excluded the rows).
+function CategoryChip({
+  label, count, active, onClick,
+}: {
+  label: string
+  count: number
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        'text-[11px] px-2.5 py-1 rounded-full border inline-flex items-center gap-1.5 transition-colors',
+        active
+          ? 'bg-[#111110] text-white border-[#111110]'
+          : count === 0
+            ? 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+            : 'bg-white text-gray-700 border-gray-200 hover:border-gray-400'
+      )}
+    >
+      <span>{label}</span>
+      <span className={clsx(
+        'text-[10px] tabular-nums',
+        active ? 'text-white/70' : 'text-gray-400'
+      )}>
+        {count}
+      </span>
+    </button>
+  )
+}
+
 // File → resized 800px-max base64 dataURL. Matches the pattern used by
 // leave/payroll attachments so backend size guards line up.
 async function fileToDataURL(file: File, maxDim = 800): Promise<string> {
@@ -214,6 +249,26 @@ export default function SupportPage() {
       today: scope.filter(t => dayjs(t.created_at).isAfter(startOfDay)).length,
     }
   }, [tickets, view, isStaff, user?.id])
+
+  // Per-category counts shown as little numbers on each chip — same
+  // view scope as the stat cards so totals add up to what the list
+  // would show. Counts respect the current status filter too, so
+  // toggling "รอตอบ" updates the category chips to show only-open
+  // breakdowns (useful when HR wants to know "what kind of opens
+  // are sitting in the queue").
+  const categoryCounts = useMemo(() => {
+    const scope = tickets.filter(t => {
+      if (!isStaff || view === 'mine') {
+        if (t.user_id !== user?.id) return false
+      }
+      if (statusFilter !== 'all' && t.status !== statusFilter) return false
+      return true
+    })
+    const out: Record<string, number> = { all: scope.length }
+    for (const c of CATEGORIES) out[c.value] = 0
+    for (const t of scope) out[t.category] = (out[t.category] || 0) + 1
+    return out
+  }, [tickets, view, statusFilter, isStaff, user?.id])
 
   // Did the user actually narrow anything? Used to show "ล้างตัวกรอง"
   // in the empty state when filters return zero rows.
@@ -347,76 +402,63 @@ export default function SupportPage() {
         />
       </div>
 
-      {/* Search box. Live-filter (no debounce needed — list is capped
-          at 100 rows so even on slow devices the filter pass is
-          instant). Clear button when there's input. */}
-      <div className="relative mb-3">
-        <IconSearch
-          size={14}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-        />
-        <input
-          className="input pl-9 pr-8 text-sm"
-          placeholder="ค้นหาในหัวข้อ / รายละเอียด / ชื่อผู้แจ้ง…"
-          value={searchQ}
-          onChange={e => setSearchQ(e.target.value)}
-        />
-        {searchQ && (
-          <button
-            type="button"
-            onClick={() => setSearchQ('')}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
-            title="ล้างคำค้นหา"
-          >
-            <IconX size={14} />
-          </button>
-        )}
-      </div>
+      {/* Search + category filter in one card. Status filter is gone
+          from here — the stat cards above handle that. Active filter
+          on the right gets a quick "ล้าง" if anything is set, so the
+          user always has a one-click escape hatch. */}
+      <div className="card mb-4 space-y-2.5">
+        <div className="relative">
+          <IconSearch
+            size={14}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+          />
+          <input
+            className="input pl-9 pr-8 text-sm"
+            placeholder="ค้นหาในหัวข้อ / รายละเอียด / ชื่อผู้แจ้ง…"
+            value={searchQ}
+            onChange={e => setSearchQ(e.target.value)}
+          />
+          {searchQ && (
+            <button
+              type="button"
+              onClick={() => setSearchQ('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+              title="ล้างคำค้นหา"
+            >
+              <IconX size={14} />
+            </button>
+          )}
+        </div>
 
-      {/* Filter chips */}
-      <div className="card mb-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[11px] text-gray-500">สถานะ:</span>
-          {(['all', 'open', 'answered', 'closed'] as const).map(s => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={clsx(
-                'text-[11px] px-2.5 py-1 rounded-full border transition-colors',
-                statusFilter === s
-                  ? 'bg-[#111110] text-white border-[#111110]'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
-              )}
-            >
-              {s === 'all' ? 'ทั้งหมด' : STATUS_TH[s]}
-            </button>
-          ))}
-          <span className="text-[11px] text-gray-500 ml-3">หมวด:</span>
-          <button
+        {/* Category chips with counts. 0-count categories are dimmed
+            but still clickable (in case the count is 0 only because
+            of the current status scope). Single "ล้าง" appears when
+            anything is filtered. */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <CategoryChip
+            label="ทั้งหมด"
+            count={categoryCounts.all}
+            active={categoryFilter === 'all'}
             onClick={() => setCategoryFilter('all')}
-            className={clsx(
-              'text-[11px] px-2.5 py-1 rounded-full border transition-colors',
-              categoryFilter === 'all'
-                ? 'bg-[#111110] text-white border-[#111110]'
-                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
-            )}
-          >
-            ทั้งหมด
-          </button>
+          />
           {CATEGORIES.map(c => (
-            <button
+            <CategoryChip
               key={c.value}
+              label={c.label}
+              count={categoryCounts[c.value] || 0}
+              active={categoryFilter === c.value}
               onClick={() => setCategoryFilter(c.value)}
-              className={clsx(
-                'text-[11px] px-2.5 py-1 rounded-full border transition-colors',
-                categoryFilter === c.value
-                  ? 'bg-[#111110] text-white border-[#111110]'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
-              )}
-            >
-              {c.label}
-            </button>
+            />
           ))}
+          {hasActiveFilters && (
+            <button
+              onClick={clearFilters}
+              className="ml-auto text-[11px] text-gray-500 hover:text-red-600 inline-flex items-center gap-1"
+              title="ล้างทุกตัวกรอง"
+            >
+              <IconX size={11} /> ล้างตัวกรอง
+            </button>
+          )}
         </div>
       </div>
 
