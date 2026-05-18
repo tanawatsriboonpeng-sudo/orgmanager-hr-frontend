@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import {
-  supportApi,
+  supportApi, aiApi,
   type SupportTicket, type SupportCategory, type SupportStatus, type SupportTicketCreate,
 } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
@@ -751,11 +751,50 @@ function TicketDetailModal({
   const cat = CAT_BY_VALUE[ticket.category]
   const isOwner = ticket.user_id === currentUserId
 
+  // Lightbox for the attached image. We can't use <a target="_blank">
+  // because Chrome blocks navigation to `data:` URLs as a security
+  // measure (opens a blank tab). An in-page overlay sidesteps the
+  // issue entirely and is actually nicer UX — click to dismiss, Esc
+  // to close, no tab juggling.
+  const [lightbox, setLightbox] = useState<string | null>(null)
+  useEffect(() => {
+    if (!lightbox) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lightbox])
+
   // Compose state for staff reply
   const [response, setResponse] = useState(ticket.hr_response || '')
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
   useEffect(() => { setResponse(ticket.hr_response || '') }, [ticket.hr_response])
+
+  // AI draft state — separate from `busy` so the AI button doesn't
+  // disable the send buttons (they share semantics but feel
+  // independent to the user). aiDrafted=true triggers the inline
+  // "AI ร่าง — โปรดตรวจก่อนส่ง" reminder under the textarea.
+  const [aiDrafting, setAiDrafting] = useState(false)
+  const [aiDrafted, setAiDrafted] = useState(false)
+  const askAiToDraft = async () => {
+    if (aiDrafting) return
+    setAiDrafting(true)
+    try {
+      const { data } = await aiApi.draftTicketResponse(ticket.id)
+      const draft = data?.data?.draft?.trim() || ''
+      if (!draft) {
+        flash('AI ไม่ได้ส่งคำตอบกลับมา ลองอีกครั้ง', false)
+        return
+      }
+      setResponse(draft)
+      setAiDrafted(true)
+      flash('AI ร่างคำตอบให้แล้ว — โปรดตรวจก่อนกดส่ง')
+    } catch (e: any) {
+      flash(e?.response?.data?.message || 'ร่างคำตอบไม่สำเร็จ', false)
+    } finally {
+      setAiDrafting(false)
+    }
+  }
 
   const requesterName =
     [ticket.requester_first_name, ticket.requester_last_name].filter(Boolean).join(' ') ||
@@ -845,18 +884,19 @@ function TicketDetailModal({
           <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{ticket.description}</p>
           {ticket.attachment && (
             <div className="mt-3">
-              <a
-                href={ticket.attachment}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block"
+              <button
+                type="button"
+                onClick={() => setLightbox(ticket.attachment)}
+                className="inline-block cursor-zoom-in"
+                title="คลิกเพื่อดูขนาดเต็ม"
               >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={ticket.attachment}
                   alt="แนบ"
-                  className="max-h-60 rounded-md border border-black/[0.06] hover:opacity-90"
+                  className="max-h-60 rounded-md border border-black/[0.06] hover:opacity-90 transition-opacity"
                 />
-              </a>
+              </button>
             </div>
           )}
         </div>
@@ -888,16 +928,39 @@ function TicketDetailModal({
         {/* Staff reply composer */}
         {isStaff && ticket.status !== 'closed' && (
           <div className="px-5 py-4 border-b border-black/[0.06] bg-amber-50/30">
-            <label className="label">
-              {ticket.hr_response ? 'แก้คำตอบ / ตอบเพิ่ม' : 'ตอบกลับ'}
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="label !mb-0">
+                {ticket.hr_response ? 'แก้คำตอบ / ตอบเพิ่ม' : 'ตอบกลับ'}
+              </label>
+              {/* AI draft button — top-right of the label row so it
+                  doesn't compete with the primary action buttons
+                  below. Clicking fills the textarea with a Haiku-
+                  generated draft for the HR to review + edit before
+                  sending. The user always sends; AI never sends. */}
+              <button
+                type="button"
+                onClick={askAiToDraft}
+                disabled={aiDrafting}
+                className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border border-[#1D9E75]/30 text-[#0F6E56] bg-white hover:bg-[#E1F5EE] disabled:opacity-50 transition-colors"
+                title="ให้ AI ช่วยร่างคำตอบจากเนื้อหา ticket — คุณตรวจก่อนส่งเอง"
+              >
+                <IconSparkles size={12} />
+                {aiDrafting ? 'กำลังร่าง…' : 'ขอ AI ช่วยร่าง'}
+              </button>
+            </div>
             <textarea
               className="input min-h-[100px] resize-y text-sm"
               placeholder="ข้อความถึงผู้แจ้ง — ระบบจะแจ้งเตือนผ่าน bell"
               value={response}
-              onChange={e => setResponse(e.target.value)}
+              onChange={e => { setResponse(e.target.value); setAiDrafted(false) }}
               maxLength={5000}
             />
+            {aiDrafted && (
+              <div className="mt-1.5 text-[11px] text-[#0F6E56] flex items-center gap-1">
+                <IconSparkles size={11} />
+                AI ร่างให้ — โปรดตรวจ + แก้ตามต้องการก่อนกดส่ง
+              </div>
+            )}
             <div className="flex justify-end gap-2 mt-2">
               <button
                 onClick={() => doRespond(false)}
@@ -939,6 +1002,32 @@ function TicketDetailModal({
           </div>
         </div>
       </div>
+
+      {/* Image lightbox. Rendered at the end so it sits above the
+          ticket modal (which already uses z-50; the lightbox uses
+          z-[60] to win). Click anywhere — including the image — to
+          dismiss. Esc also works via the keydown listener above. */}
+      {lightbox && (
+        <div
+          onClick={() => setLightbox(null)}
+          className="fixed inset-0 z-[60] bg-black/85 flex items-center justify-center p-4 cursor-zoom-out"
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setLightbox(null) }}
+            className="absolute top-4 right-4 text-white/80 hover:text-white"
+            aria-label="ปิด"
+          >
+            <IconX size={28} />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lightbox}
+            alt="รูปแนบขนาดเต็ม"
+            className="max-w-full max-h-full rounded shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   )
 }

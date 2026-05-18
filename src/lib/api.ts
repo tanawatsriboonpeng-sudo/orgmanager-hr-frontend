@@ -1090,6 +1090,13 @@ export const aiApi = {
   status: () => api.get<{ success: boolean; data: { enabled: boolean; model: string; daily_quota: number; used_today: number } }>('/ai/status'),
   chat: (messages: AIChatMessage[]) =>
     api.post<{ success: boolean; data: AIChatReply }>('/ai/chat', { messages }),
+  // One-shot draft for the support ticket "✨ ขอ AI ช่วยร่าง" button.
+  // Returns text only — no DB write. HR/owner clicks send themselves.
+  draftTicketResponse: (ticketId: string) =>
+    api.post<{ success: boolean; data: { draft: string; model: string } }>(
+      '/ai/draft-ticket-response',
+      { ticket_id: ticketId },
+    ),
 }
 
 export default api
