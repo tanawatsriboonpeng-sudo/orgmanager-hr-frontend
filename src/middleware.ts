@@ -17,6 +17,7 @@ export const config = {
     '/ot/:path*',
     '/shifts/:path*',
     '/payroll/:path*',
+    '/salary-certificate/:path*',
     '/kpi/:path*',
     '/projects/:path*',
     '/announcements/:path*',

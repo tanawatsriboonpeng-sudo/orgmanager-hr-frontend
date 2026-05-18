@@ -11,6 +11,7 @@ import {
   IconBuilding, IconLogout, IconChevronRight,
   IconSettings, IconCrown, IconUsers, IconUser, IconKey,
   IconMenu2, IconX, IconCalendarTime, IconSparkles, IconLifebuoy,
+  IconCertificate,
 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
@@ -27,6 +28,7 @@ const ROLE_MENUS = {
     { href: '/leave', icon: IconCalendarOff, label: 'การลา' },
     { href: '/shifts', icon: IconCalendarTime, label: 'จัดกะ' },
     { href: '/payroll', icon: IconReceipt2, label: 'เงินเดือน' },
+    { href: '/salary-certificate', icon: IconCertificate, label: 'หนังสือรับรอง' },
     { href: '/kpi', icon: IconChartBar, label: 'KPI' },
     { href: '/projects', icon: IconClipboardList, label: 'โปรเจกต์' },
     { href: '/cleaning', icon: IconSparkles, label: 'ทำความสะอาด' },
@@ -44,6 +46,7 @@ const ROLE_MENUS = {
     { href: '/ot', icon: IconClockPlus, label: 'OT' },
     { href: '/shifts', icon: IconCalendarTime, label: 'จัดกะ' },
     { href: '/payroll', icon: IconReceipt2, label: 'เงินเดือน' },
+    { href: '/salary-certificate', icon: IconCertificate, label: 'หนังสือรับรอง' },
     { href: '/kpi', icon: IconChartBar, label: 'KPI' },
     { href: '/employees', icon: IconUsers, label: 'พนักงาน' },
     { href: '/projects', icon: IconClipboardList, label: 'โปรเจกต์' },
