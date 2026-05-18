@@ -12,6 +12,7 @@ import EmployeeAvatar from '@/components/employees/EmployeeAvatar'
 import { isLiffConfigured, initLiff, shareViaLine } from '@/lib/liff'
 import { SkeletonRow } from '@/components/ui/Skeleton'
 import EmptyState from '@/components/ui/EmptyState'
+import { useToast } from '@/components/ui/Toast'
 
 const MONTHS_TH = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -472,7 +473,9 @@ function CreateSlipModal({
     month: defaultMonth ?? (now.month() + 1),
     year: defaultYear ?? now.year(),
     baseSalary: 0, otAmount: 0, bonus: 0, allowances: 0,
+    commission: 0, otherEarnings: 0,
     socialSecurity: 0, incomeTax: 0, otherDeductions: 0,
+    studentLoan: 0, deposit: 0, absentLateDeduction: 0,
     workDays: 0, absentDays: 0, lateCount: 0, otHours: 0,
     notes: '',
   })
@@ -506,6 +509,11 @@ function CreateSlipModal({
       ...p,
       employeeId: id,
       baseSalary: toNum(emp?.base_salary),
+      // Pull recurring deductions from the employee profile so HR
+      // doesn't have to retype the same amount every month. Still
+      // editable per-slip if the employee skipped a payment etc.
+      studentLoan: toNum(emp?.student_loan_monthly),
+      deposit: toNum(emp?.deposit_monthly),
     }))
   }
 
@@ -588,9 +596,14 @@ function SlipDetailModal({
     otAmount: toNum(record.ot_amount),
     bonus: toNum(record.bonus),
     allowances: toNum(record.allowances),
+    commission: toNum((record as any).commission),
+    otherEarnings: toNum((record as any).other_earnings),
     socialSecurity: toNum(record.social_security),
     incomeTax: toNum(record.income_tax),
     otherDeductions: toNum(record.other_deductions),
+    studentLoan: toNum((record as any).student_loan),
+    deposit: toNum((record as any).deposit),
+    absentLateDeduction: toNum((record as any).absent_late_deduction),
     workDays: record.work_days ?? 0,
     absentDays: record.absent_days ?? 0,
     lateCount: record.late_count ?? 0,
@@ -648,6 +661,23 @@ function SlipDetailModal({
     try { await fn(); onChanged() } catch (e: any) {
       onError(e.response?.data?.message || successMsg + 'ไม่สำเร็จ')
     } finally { setBusy(false) }
+  }
+
+  // Branded confirm for the destructive delete. Without this, clicking
+  // "ลบ" on a draft slip was an instant write — one misclick wiped
+  // freshly-generated drafts with no warning, and the values don't
+  // reverse-engineer easily (allowances + adjustments are HR-tuned
+  // from defaults, and the draft IS the snapshot).
+  const toast = useToast()
+  const empName = [record.first_name, record.last_name].filter(Boolean).join(' ').trim() || 'พนักงาน'
+  const period = `${MONTHS_TH[record.month - 1]} ${record.year + 543}`
+  const deleteSlip = async () => {
+    const ok = await toast.confirm(
+      `สลิปของ "${empName}" สำหรับเดือน ${period} จะถูกลบอย่างถาวร — ค่าทั้งหมดที่กรอกไว้จะหายและกู้กลับไม่ได้`,
+      { title: 'ลบสลิปนี้?', tone: 'danger', confirmText: 'ลบสลิป', cancelText: 'ยกเลิก' }
+    )
+    if (!ok) return
+    await action(() => payrollApi.delete(record.id), 'ลบ')
   }
 
   const isPaid = record.status === 'paid'
@@ -779,7 +809,7 @@ function SlipDetailModal({
           <>
             {isDraft && (
               <button
-                onClick={() => action(() => payrollApi.delete(record.id), 'ลบ')}
+                onClick={deleteSlip}
                 disabled={busy}
                 className="btn text-sm text-red-500 border-red-200 hover:bg-red-50"
               >
@@ -871,8 +901,20 @@ function SlipReadOnly({
   otBreakdown?: OtBreakdownItem[] | null
   company?: { name?: string | null; address?: string | null; taxId?: string | null }
 }) {
-  const totalEarnings   = toNum(record.base_salary) + toNum(record.ot_amount) + toNum(record.bonus) + toNum(record.allowances)
-  const totalDeductions = toNum(record.social_security) + toNum(record.income_tax) + toNum(record.other_deductions)
+  const totalEarnings =
+      toNum(record.base_salary)
+    + toNum(record.ot_amount)
+    + toNum(record.bonus)
+    + toNum(record.allowances)
+    + toNum((record as any).commission)
+    + toNum((record as any).other_earnings)
+  const totalDeductions =
+      toNum(record.social_security)
+    + toNum(record.income_tax)
+    + toNum(record.other_deductions)
+    + toNum((record as any).student_loan)
+    + toNum((record as any).deposit)
+    + toNum((record as any).absent_late_deduction)
 
   // YTD totals — fetch all this employee's paid/approved slips for the
   // same Gregorian year and sum the relevant fields. Computing on the
@@ -967,10 +1009,10 @@ function SlipReadOnly({
           </div>
           <SlipRow th="เงินเดือน / ค่าจ้าง" en="Salary/Wage"           value={record.base_salary} />
           <SlipRow th="ค่าล่วงเวลา"          en="Overtime"             value={record.ot_amount} />
-          <SlipRow th="ค่านายหน้า"           en="Commission"           value={0} />
+          <SlipRow th="ค่านายหน้า"           en="Commission"           value={(record as any).commission} />
           <SlipRow th="ค่าเบี้ยเลี้ยง / ค่าครองชีพ" en="Allowances / Cost of livings" value={record.allowances} />
           <SlipRow th="โบนัส"                en="Bonus"                value={record.bonus} />
-          <SlipRow th="เงินได้อื่นๆ"          en="Others"               value={0} />
+          <SlipRow th="เงินได้อื่นๆ"          en="Others"               value={(record as any).other_earnings} />
         </div>
 
         {/* Deductions */}
@@ -980,9 +1022,9 @@ function SlipReadOnly({
           </div>
           <SlipRow th="ประกันสังคม"          en="Social Security Fund" value={record.social_security} />
           <SlipRow th="ภาษีหัก ณ ที่จ่าย"     en="Withholding tax"      value={record.income_tax} />
-          <SlipRow th="เงินกู้ยืม กยศ./กรอ."  en="Student Loan Fund"    value={0} />
-          <SlipRow th="เงินประกัน"           en="Deposit"              value={0} />
-          <SlipRow th="ขาด / ลา / มาสาย"     en="Absent / Leave / Late" value={0} />
+          <SlipRow th="เงินกู้ยืม กยศ./กรอ."  en="Student Loan Fund"    value={(record as any).student_loan} />
+          <SlipRow th="เงินประกัน"           en="Deposit"              value={(record as any).deposit} />
+          <SlipRow th="ขาด / ลา / มาสาย"     en="Absent / Leave / Late" value={(record as any).absent_late_deduction} />
           <SlipRow th="รายการหักอื่นๆ"        en="Others"               value={record.other_deductions} />
         </div>
 
@@ -1183,8 +1225,8 @@ function SlipAmountsForm({
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
-        <h3 className="text-xs font-semibold text-gray-500 mb-2">รายรับ</h3>
-        <NumField label="เงินเดือนพื้นฐาน" value={form.baseSalary} onChange={v => setForm((p: any) => ({ ...p, baseSalary: v }))} money />
+        <h3 className="text-xs font-semibold text-gray-500 mb-2">เงินได้ / Earnings</h3>
+        <NumField label="เงินเดือน/ค่าจ้าง" value={form.baseSalary} onChange={v => setForm((p: any) => ({ ...p, baseSalary: v }))} money />
         <div className="relative">
           <NumField label="ค่าล่วงเวลา (OT)" value={form.otAmount} onChange={v => setForm((p: any) => ({ ...p, otAmount: v }))} money />
           {otContext && (
@@ -1199,14 +1241,23 @@ function SlipAmountsForm({
             />
           )}
         </div>
+        <NumField label="ค่านายหน้า" value={form.commission} onChange={v => setForm((p: any) => ({ ...p, commission: v }))} money />
+        <NumField label="ค่าเบี้ยเลี้ยง/ค่าครองชีพ" value={form.allowances} onChange={v => setForm((p: any) => ({ ...p, allowances: v }))} money />
         <NumField label="โบนัส" value={form.bonus} onChange={v => setForm((p: any) => ({ ...p, bonus: v }))} money />
-        <NumField label="เบี้ยเลี้ยง/อื่นๆ" value={form.allowances} onChange={v => setForm((p: any) => ({ ...p, allowances: v }))} money />
+        <NumField label="เงินได้อื่นๆ" value={form.otherEarnings} onChange={v => setForm((p: any) => ({ ...p, otherEarnings: v }))} money />
       </div>
       <div>
-        <h3 className="text-xs font-semibold text-gray-500 mb-2">รายการหัก</h3>
+        <h3 className="text-xs font-semibold text-gray-500 mb-2">รายการหัก / Deductions</h3>
         <NumField label="ประกันสังคม" value={form.socialSecurity} onChange={v => setForm((p: any) => ({ ...p, socialSecurity: v }))} money />
-        <NumField label="ภาษี" value={form.incomeTax} onChange={v => setForm((p: any) => ({ ...p, incomeTax: v }))} money />
-        <NumField label="หักอื่นๆ" value={form.otherDeductions} onChange={v => setForm((p: any) => ({ ...p, otherDeductions: v }))} money />
+        <NumField label="ภาษีหัก ณ ที่จ่าย" value={form.incomeTax} onChange={v => setForm((p: any) => ({ ...p, incomeTax: v }))} money />
+        {/* Student loan + deposit default from the employee profile —
+            HR can override per-slip if needed (e.g. a month the
+            employee paid off the loan early). Surfacing them here
+            makes the override path discoverable. */}
+        <NumField label="เงินกู้ยืม กยศ./กรอ." value={form.studentLoan} onChange={v => setForm((p: any) => ({ ...p, studentLoan: v }))} money />
+        <NumField label="เงินประกัน" value={form.deposit} onChange={v => setForm((p: any) => ({ ...p, deposit: v }))} money />
+        <NumField label="ขาด/ลา/มาสาย (หัก)" value={form.absentLateDeduction} onChange={v => setForm((p: any) => ({ ...p, absentLateDeduction: v }))} money />
+        <NumField label="รายการหักอื่นๆ" value={form.otherDeductions} onChange={v => setForm((p: any) => ({ ...p, otherDeductions: v }))} money />
       </div>
       <div className="sm:col-span-2">
         <h3 className="text-xs font-semibold text-gray-500 mb-2">สถิติเดือนนี้</h3>
@@ -1305,8 +1356,21 @@ function NumField({ label, value, onChange, money }: { label: string; value: num
 }
 
 function NetPreview({ form }: { form: any }) {
-  const net = toNum(form.baseSalary) + toNum(form.otAmount) + toNum(form.bonus) + toNum(form.allowances)
-    - toNum(form.socialSecurity) - toNum(form.incomeTax) - toNum(form.otherDeductions)
+  // Mirror the backend's GENERATED net_salary formula exactly so the
+  // preview never diverges from the saved value.
+  const net =
+      toNum(form.baseSalary)
+    + toNum(form.otAmount)
+    + toNum(form.bonus)
+    + toNum(form.allowances)
+    + toNum(form.commission)
+    + toNum(form.otherEarnings)
+    - toNum(form.socialSecurity)
+    - toNum(form.incomeTax)
+    - toNum(form.otherDeductions)
+    - toNum(form.studentLoan)
+    - toNum(form.deposit)
+    - toNum(form.absentLateDeduction)
   return (
     <div className="mt-4 p-3 rounded-[10px] bg-[#E1F5EE] flex items-center justify-between">
       <div className="text-xs text-[#085041]">เงินเดือนสุทธิ (คำนวณอัตโนมัติ)</div>
