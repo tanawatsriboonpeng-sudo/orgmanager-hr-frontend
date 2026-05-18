@@ -10,6 +10,7 @@
 // make the modal reusable from other surfaces (mobile-only check-in
 // flows, future kiosk mode, etc.).
 import { useCallback, useEffect, useRef, useState } from 'react'
+import clsx from 'clsx'
 import { IconAlertTriangle, IconCheck, IconRefresh, IconX } from '@tabler/icons-react'
 
 interface SelfieModalProps {
@@ -50,10 +51,12 @@ export default function SelfieModal({ onClose, onSubmit, busy }: SelfieModalProp
         audio: false,
       })
       streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play().catch(() => {})
-      }
+      // NB: do NOT touch videoRef.current here. The previous version
+      // had this block + `if (videoRef.current)` guard, but the <video>
+      // element only mounts AFTER setPhase('live'), so videoRef.current
+      // was always null and the stream silently never got attached.
+      // We now keep <video> always mounted (just hidden) and a separate
+      // effect below wires up srcObject once phase flips to 'live'.
       setPhase('live')
     } catch (e: any) {
       const msg = e?.name === 'NotAllowedError'
@@ -69,6 +72,19 @@ export default function SelfieModal({ onClose, onSubmit, busy }: SelfieModalProp
     return () => stopStream()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Wire the MediaStream into the <video> element after React has
+  // mounted it. This runs every time we flip into 'live' (initial start
+  // and after retake) so the element always points at the current
+  // stream, never at a stale one from before stopStream() ran.
+  useEffect(() => {
+    if (phase !== 'live') return
+    const v = videoRef.current
+    const s = streamRef.current
+    if (!v || !s) return
+    v.srcObject = s
+    v.play().catch(() => {})
+  }, [phase])
 
   const snap = () => {
     const v = videoRef.current
@@ -108,14 +124,22 @@ export default function SelfieModal({ onClose, onSubmit, busy }: SelfieModalProp
         </div>
         <div className="p-4">
           <div className="relative w-full rounded-[10px] overflow-hidden bg-black/90 aspect-[4/3] mb-3">
-            {phase === 'live' && (
-              <video
-                ref={videoRef}
-                className="w-full h-full object-cover"
-                playsInline
-                muted
-              />
-            )}
+            {/* <video> is ALWAYS mounted so videoRef.current is non-null
+                by the time getUserMedia resolves. We just hide it when
+                we're not actively in 'live'. autoPlay covers the case
+                where srcObject is assigned mid-render — Safari requires
+                both playsInline + muted + autoPlay for inline playback
+                without user interaction. */}
+            <video
+              ref={videoRef}
+              className={clsx(
+                'w-full h-full object-cover',
+                phase === 'live' ? 'block' : 'hidden'
+              )}
+              playsInline
+              muted
+              autoPlay
+            />
             {phase === 'preview' && snapshot && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={snapshot} alt="snapshot" className="w-full h-full object-cover" />
