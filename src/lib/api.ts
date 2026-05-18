@@ -1077,7 +1077,8 @@ export interface AIChatReply {
   stop_reason: string
   usage: {
     message_count_today: number
-    daily_quota: number
+    /** null = unlimited (owner / hr roles) */
+    daily_quota: number | null
     tokens: {
       input_tokens: number
       output_tokens: number
@@ -1087,7 +1088,7 @@ export interface AIChatReply {
   }
 }
 export const aiApi = {
-  status: () => api.get<{ success: boolean; data: { enabled: boolean; model: string; daily_quota: number; used_today: number } }>('/ai/status'),
+  status: () => api.get<{ success: boolean; data: { enabled: boolean; model: string; daily_quota: number | null; used_today: number } }>('/ai/status'),
   chat: (messages: AIChatMessage[]) =>
     api.post<{ success: boolean; data: AIChatReply }>('/ai/chat', { messages }),
   // One-shot draft for the support ticket "✨ ขอ AI ช่วยร่าง" button.

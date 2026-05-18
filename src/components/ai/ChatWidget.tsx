@@ -86,7 +86,9 @@ export default function ChatWidget() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [messages, setMessages] = useState<UIMessage[]>([])
-  const [quota, setQuota] = useState<{ used: number; max: number } | null>(null)
+  // quota.max = null means "unlimited" (owner/HR). Counter hides itself
+  // for that case so admins don't see a confusing "0/null" string.
+  const [quota, setQuota] = useState<{ used: number; max: number | null } | null>(null)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -201,7 +203,11 @@ export default function ChatWidget() {
                   <div className="text-[14px] font-semibold">ผู้ช่วย HR</div>
                   <div className="text-[10px] opacity-80">
                     ถามเรื่องลา / สลิป / กะ / วันหยุดได้
-                    {quota ? ` · ${quota.used}/${quota.max} ข้อความวันนี้` : ''}
+                    {/* Hide counter for admins (max === null = unlimited).
+                        Show "N/M ข้อความวันนี้" for employees only. */}
+                    {quota && quota.max != null
+                      ? ` · ${quota.used}/${quota.max} ข้อความวันนี้`
+                      : ''}
                   </div>
                 </div>
               </div>
