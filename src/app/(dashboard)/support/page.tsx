@@ -337,15 +337,20 @@ export default function SupportPage() {
         </button>
       </div>
 
+      {/* Toast floats over EVERYTHING (z-[70] beats the ticket modal
+          at z-50 and the lightbox at z-[60]). Was originally inline
+          which made it invisible behind the modal — clicking "ตอบ"
+          looked like nothing happened because the success toast was
+          rendered under the open dialog. */}
       {toast && (
         <div className={clsx(
-          'mb-4 px-3 py-2 rounded-md border text-xs flex items-center justify-between',
+          'fixed top-4 right-4 z-[70] max-w-sm px-3 py-2 rounded-md border text-xs flex items-center gap-3 shadow-lg',
           toast.ok
             ? 'bg-green-50 border-green-200 text-green-700'
             : 'bg-red-50 border-red-200 text-red-700'
         )}>
-          <span>{toast.text}</span>
-          <button onClick={() => setToast(null)} className="opacity-70 hover:opacity-100">ปิด</button>
+          <span className="flex-1">{toast.text}</span>
+          <button onClick={() => setToast(null)} className="opacity-70 hover:opacity-100 flex-shrink-0">ปิด</button>
         </div>
       )}
 
@@ -834,6 +839,11 @@ function TicketDetailModal({
       await supportApi.respond(ticket.id, response.trim(), closeAfter)
       flash(closeAfter ? 'ตอบและปิดเรื่องแล้ว' : 'ตอบเรื่องแล้ว')
       onChanged()
+      // "ตอบ + ปิดเรื่อง" is a terminal action — close the modal so
+      // HR returns to the list and immediately sees the ticket moved
+      // out of the "open" stat card. Plain "ตอบ" keeps the modal
+      // open in case they want to send a follow-up.
+      if (closeAfter) onClose()
     } catch (e: any) {
       flash(e?.response?.data?.message || 'ส่งคำตอบไม่สำเร็จ', false)
     } finally { busyRef.current = false; setBusy(false) }
@@ -846,6 +856,9 @@ function TicketDetailModal({
       await supportApi.close(ticket.id)
       flash('ปิดเรื่องแล้ว')
       onChanged()
+      // Same logic as ตอบ+ปิดเรื่อง — closing is terminal, drop
+      // the user back to the list with the visible state change.
+      onClose()
     } catch (e: any) {
       flash(e?.response?.data?.message || 'ปิดเรื่องไม่สำเร็จ', false)
     } finally { busyRef.current = false; setBusy(false) }
@@ -857,6 +870,9 @@ function TicketDetailModal({
       await supportApi.reopen(ticket.id)
       flash('เปิดเรื่องใหม่แล้ว')
       onChanged()
+      // Keep the modal open so HR can immediately reply on the
+      // re-opened ticket — they almost always re-open in order to
+      // add something.
     } catch (e: any) {
       flash(e?.response?.data?.message || 'เปิดเรื่องไม่สำเร็จ', false)
     } finally { busyRef.current = false; setBusy(false) }
