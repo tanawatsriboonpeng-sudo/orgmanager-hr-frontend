@@ -59,8 +59,15 @@ export default function SalaryCertificatePage() {
   const [issueDate, setIssueDate] = useState(dayjs().format('YYYY-MM-DD'))
   const [startDate, setStartDate] = useState('')
   const [salary, setSalary] = useState<number>(0)
-  // Override when "ผู้จัดการฝ่ายบุคคล" doesn't match the signer's actual
-  // position (e.g. owner signing for a small business).
+  // Signer block — both name and position are overridable. Default to
+  // the logged-in HR user's name + "ผู้จัดการฝ่ายบุคคล", but lots of
+  // real cases need a different signer (the letter is being prepared
+  // for the owner to sign, the HR person has a longer formal name on
+  // their ID card, etc.). `signerNameTouched` prevents the
+  // auth-store-derived default from clobbering a manual edit on the
+  // first /auth/me refresh.
+  const [signerName, setSignerName] = useState('')
+  const [signerNameTouched, setSignerNameTouched] = useState(false)
   const [signerPosition, setSignerPosition] = useState('ผู้จัดการฝ่ายบุคคล')
 
   useEffect(() => {
@@ -87,12 +94,18 @@ export default function SalaryCertificatePage() {
   const issueThai = useMemo(() => thaiLongDate(issueDate), [issueDate])
   const startThai = useMemo(() => thaiLongDate(startDate), [startDate])
 
-  // Signer info (HR/owner who's logged in). The store has both
-  // camelCase and snake_case keys depending on which path populated it
-  // (login vs /auth/me), so we coalesce.
-  const signerFirst = (user as any)?.firstName || (user as any)?.first_name || ''
-  const signerLast  = (user as any)?.lastName  || (user as any)?.last_name  || ''
-  const signerName  = `${signerFirst} ${signerLast}`.trim()
+  // Seed the signer-name field from the logged-in user when the auth
+  // store first resolves. The store has both camelCase and snake_case
+  // keys depending on which path populated it (login vs /auth/me), so
+  // we coalesce. We only seed if HR hasn't typed anything yet —
+  // otherwise a later /auth/me refresh could wipe their edit.
+  useEffect(() => {
+    if (signerNameTouched) return
+    const f = (user as any)?.firstName || (user as any)?.first_name || ''
+    const l = (user as any)?.lastName  || (user as any)?.last_name  || ''
+    const full = `${f} ${l}`.trim()
+    if (full) setSignerName(full)
+  }, [user, signerNameTouched])
 
   const canPrint = empId && purpose.trim()
 
@@ -215,15 +228,26 @@ export default function SalaryCertificatePage() {
               />
             </div>
 
-            <div className="pt-3 border-t border-black/[0.06]">
-              <label className="label">ตำแหน่งผู้ลงนาม</label>
-              <input
-                className="input"
-                value={signerPosition}
-                onChange={e => setSignerPosition(e.target.value)}
-              />
-              <div className="text-[11px] text-gray-400 mt-1">
-                ลงนามโดย: {signerName || '—'}
+            <div className="pt-3 border-t border-black/[0.06] space-y-3">
+              <div>
+                <label className="label">ชื่อผู้ลงนาม</label>
+                <input
+                  className="input"
+                  value={signerName}
+                  onChange={e => { setSignerName(e.target.value); setSignerNameTouched(true) }}
+                  placeholder="ชื่อ-นามสกุล"
+                />
+                <div className="text-[11px] text-gray-400 mt-1">
+                  เริ่มต้นเป็นชื่อของคุณ แก้ไขได้หากผู้ลงนามเป็นคนอื่น
+                </div>
+              </div>
+              <div>
+                <label className="label">ตำแหน่งผู้ลงนาม</label>
+                <input
+                  className="input"
+                  value={signerPosition}
+                  onChange={e => setSignerPosition(e.target.value)}
+                />
               </div>
             </div>
 
