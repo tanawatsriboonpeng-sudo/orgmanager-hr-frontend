@@ -36,7 +36,7 @@ function relativeTime(iso: string): string {
   if (diffHr < 24) return `${diffHr} ชม.ที่แล้ว`
   const diffDay = dayjs().diff(dayjs(iso), 'day')
   if (diffDay < 7) return `${diffDay} วันที่แล้ว`
-  return dayjs(iso).format('D MMM YY HH:mm')
+  return dayjs(iso).format('D MMM BBYY HH:mm')
 }
 
 type Filter = 'all' | 'unread'
@@ -84,7 +84,7 @@ export default function NotificationsPage() {
       label:
         d === today     ? 'วันนี้'      :
         d === yesterday ? 'เมื่อวาน'   :
-                          dayjs(d).format('dddd D MMMM YYYY'),
+                          dayjs(d).format('dddd D MMMM BBBB'),
       list,
     }))
   }, [items])

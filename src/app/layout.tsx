@@ -1,5 +1,10 @@
 'use client'
 import './globals.css'
+// Side-effect import: configures dayjs with Thai locale + buddhistEra
+// plugin globally before any page renders. Every callsite that uses
+// `import dayjs from 'dayjs'` picks up the Thai month/day names + the
+// BBBB / BBYY tokens for Buddhist-year display.
+import '@/lib/dayjs'
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/lib/store'
 import { useRouter, usePathname } from 'next/navigation'

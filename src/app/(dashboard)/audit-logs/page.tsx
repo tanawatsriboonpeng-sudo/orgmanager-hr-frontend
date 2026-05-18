@@ -64,7 +64,7 @@ function relativeTime(iso: string): string {
   if (diffHr < 24) return `${diffHr} ชม.ที่แล้ว`
   const diffDay = now.diff(then, 'day')
   if (diffDay < 7) return `${diffDay} วันที่แล้ว`
-  return then.format('D MMM YY HH:mm')
+  return then.format('D MMM BBYY HH:mm')
 }
 
 export default function AuditLogsPage() {
@@ -207,7 +207,7 @@ export default function AuditLogsPage() {
               <div className="flex items-center gap-2 mb-2 text-xs text-gray-500">
                 <IconCalendar size={12} />
                 <span className="font-medium">
-                  {dayjs(day).format('dddd D MMMM YYYY')}
+                  {dayjs(day).format('dddd D MMMM BBBB')}
                 </span>
                 <span className="text-gray-300">·</span>
                 <span>{logs.length} รายการ</span>

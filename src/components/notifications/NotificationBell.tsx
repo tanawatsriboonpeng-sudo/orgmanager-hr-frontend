@@ -39,7 +39,7 @@ function relativeTime(iso: string): string {
   if (diffHr < 24) return `${diffHr} ชม.ที่แล้ว`
   const diffDay = dayjs().diff(dayjs(iso), 'day')
   if (diffDay < 7) return `${diffDay} วันที่แล้ว`
-  return dayjs(iso).format('D MMM YY')
+  return dayjs(iso).format('D MMM BBYY')
 }
 
 export default function NotificationBell() {

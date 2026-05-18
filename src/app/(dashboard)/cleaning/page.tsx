@@ -383,7 +383,7 @@ function TodayTab({ flash, isHR, onChanged }: { flash: (text: string, ok?: boole
 
   const inspectorName =
     [session.inspector_first_name, session.inspector_last_name].filter(Boolean).join(' ') || 'ยังไม่กำหนด'
-  const dateLabel = dayjs(session.session_date).format('dddd ที่ D MMMM YYYY')
+  const dateLabel = dayjs(session.session_date).format('dddd ที่ D MMMM BBBB')
 
   return (
     <div className="space-y-4">
@@ -776,7 +776,7 @@ function HistoryTab({ flash, isHR, onOpenDetail, refreshKey }: {
                   onClick={() => onOpenDetail(r.id)}
                   className="border-b border-black/[0.04] hover:bg-gray-50 cursor-pointer"
                 >
-                  <td className="px-3 py-2.5">{dayjs(r.session_date).format('D MMM YY')}</td>
+                  <td className="px-3 py-2.5">{dayjs(r.session_date).format('D MMM BBYY')}</td>
                   <td className="px-3 py-2.5 text-gray-600">{r.start_time?.slice(0,5)}–{r.end_time?.slice(0,5)}</td>
                   <td className="px-3 py-2.5">
                     {r.inspector_id ? (
@@ -1334,7 +1334,7 @@ function SessionDetailModal({
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div>
                 <p className="text-sm font-semibold text-[#111110]">
-                  {dayjs(detail.session_date).format('dddd ที่ D MMMM YYYY')}
+                  {dayjs(detail.session_date).format('dddd ที่ D MMMM BBBB')}
                 </p>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {detail.start_time?.slice(0,5)}–{detail.end_time?.slice(0,5)}

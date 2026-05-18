@@ -337,7 +337,7 @@ export default function OTPage() {
                           </div>
                           <div className="text-xs text-gray-500 mt-0.5">
                             <IconClock size={11} className="inline mr-1 -mt-0.5" />
-                            {dayjs(r.date).format('D MMM YY')} · {r.start_time?.slice(0,5)}–{r.end_time?.slice(0,5)}
+                            {dayjs(r.date).format('D MMM BBYY')} · {r.start_time?.slice(0,5)}–{r.end_time?.slice(0,5)}
                             <span className="text-gray-700 font-medium ml-1">· {Number(r.hours).toFixed(1)} ชม.</span>
                           </div>
                           {r.reason && (
@@ -459,7 +459,7 @@ export default function OTPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-sm text-[#111110]">
-                                {dayjs(r.date).format('D MMM YY')} · {r.start_time?.slice(0,5)}–{r.end_time?.slice(0,5)}
+                                {dayjs(r.date).format('D MMM BBYY')} · {r.start_time?.slice(0,5)}–{r.end_time?.slice(0,5)}
                               </span>
                               <span className="text-xs text-gray-500 tabular-nums">{Number(r.hours).toFixed(1)} ชม.</span>
                               <span className={clsx('badge flex-shrink-0', STATUS_BADGE[ds] || 'badge-gray')}>

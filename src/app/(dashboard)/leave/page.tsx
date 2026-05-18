@@ -673,7 +673,7 @@ export default function LeavePage() {
                 : previewStraddles
                   ? <><IconAlertCircle size={13} className="flex-shrink-0" /> ช่วงนี้คร่อมวันหยุด/วันหยุดราชการ — กรุณาแยกยื่นเป็น 2 ครั้ง (ก่อนและหลังวันหยุด)</>
                   : advanceShort
-                    ? <>ต้องยื่นล่วงหน้าอย่างน้อย {selectedType?.advance_notice_days} วัน — เลือกวันเริ่มตั้งแต่ {dayjs(minStartDate).format('D MMM YY')} เป็นต้นไป</>
+                    ? <>ต้องยื่นล่วงหน้าอย่างน้อย {selectedType?.advance_notice_days} วัน — เลือกวันเริ่มตั้งแต่ {dayjs(minStartDate).format('D MMM BBYY')} เป็นต้นไป</>
                     : previewDays === 0
                       ? <>ช่วงนี้ไม่มีวันทำงาน (เสาร์-อาทิตย์/วันหยุดราชการไม่นับเป็นวันลา)</>
                       : quotaWarning
@@ -757,7 +757,7 @@ export default function LeavePage() {
                           </div>
                           <div className="text-xs text-gray-500 mt-0.5">
                             <span className="badge badge-blue mr-1.5" style={{ fontSize: 10 }}>{r.leave_type_name}</span>
-                            {dayjs(r.start_date).format('D MMM')}–{dayjs(r.end_date).format('D MMM YY')}
+                            {dayjs(r.start_date).format('D MMM')}–{dayjs(r.end_date).format('D MMM BBYY')}
                             <span className="text-gray-700 font-medium ml-1">· {r.days_count} วัน</span>
                           </div>
                           {r.reason && (
@@ -900,7 +900,7 @@ export default function LeavePage() {
                             </span>
                           </div>
                           <div className="text-xs text-gray-500 mt-0.5">
-                            {dayjs(r.start_date).format('D MMM')}–{dayjs(r.end_date).format('D MMM YY')} · {r.days_count} วัน
+                            {dayjs(r.start_date).format('D MMM')}–{dayjs(r.end_date).format('D MMM BBYY')} · {r.days_count} วัน
                           </div>
                         </div>
                         {isPending && (
@@ -1188,7 +1188,7 @@ export default function LeavePage() {
                       </td>
                       <td className="py-2 pr-3 text-[12px]">{r.leave_type_name}</td>
                       <td className="py-2 pr-3 text-[12px] text-gray-600 whitespace-nowrap">
-                        {dayjs(r.start_date).format('D MMM')}–{dayjs(r.end_date).format('D MMM YY')}
+                        {dayjs(r.start_date).format('D MMM')}–{dayjs(r.end_date).format('D MMM BBYY')}
                       </td>
                       <td className="py-2 pr-3 text-right tabular-nums text-[12px]">{r.days_count}</td>
                       <td className="py-2 pr-3">
@@ -1226,7 +1226,7 @@ export default function LeavePage() {
                           <div className="rounded-[8px] bg-red-50/60 border border-red-100 p-2.5 flex flex-col gap-2">
                             <p className="text-[11px] text-red-700">
                               ⚠️ ยกเลิกคำขอนี้จะ <strong>คืนโควตา {r.days_count} วัน</strong> และ
-                              <strong> ลบ attendance "ลา"</strong> ของช่วง {dayjs(r.start_date).format('D MMM')}–{dayjs(r.end_date).format('D MMM YY')} ออก
+                              <strong> ลบ attendance "ลา"</strong> ของช่วง {dayjs(r.start_date).format('D MMM')}–{dayjs(r.end_date).format('D MMM BBYY')} ออก
                             </p>
                             <textarea
                               className="input text-[11px] min-h-[40px]"

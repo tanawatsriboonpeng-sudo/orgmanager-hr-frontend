@@ -847,7 +847,7 @@ function SlipReadOnly({ record, otBreakdown }: { record: PayrollRecord; otBreakd
 
       {record.paid_at && (
         <div className="md:col-span-2 text-xs text-gray-500">
-          จ่ายเมื่อ {dayjs(record.paid_at).format('D MMM YYYY HH:mm')}
+          จ่ายเมื่อ {dayjs(record.paid_at).format('D MMM BBBB HH:mm')}
         </div>
       )}
     </div>

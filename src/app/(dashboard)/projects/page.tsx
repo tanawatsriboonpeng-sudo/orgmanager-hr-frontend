@@ -391,7 +391,7 @@ export default function ProjectsPage() {
                 {p.due_date && (
                   <div className="flex items-center gap-1 text-[11px] text-gray-400 mt-2">
                     <IconCalendar size={11} />
-                    กำหนด {dayjs(p.due_date).format('D MMM YYYY')}
+                    กำหนด {dayjs(p.due_date).format('D MMM BBBB')}
                   </div>
                 )}
               </button>

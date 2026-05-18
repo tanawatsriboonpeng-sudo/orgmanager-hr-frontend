@@ -224,7 +224,7 @@ export default function AnnouncementsPage() {
                     <p className="text-sm text-gray-600 whitespace-pre-line">{a.content}</p>
                     <div className="flex items-center justify-between mt-2">
                       <div className="text-[11px] text-gray-400">
-                        {dayjs(a.created_at).format('D MMM YYYY HH:mm')}
+                        {dayjs(a.created_at).format('D MMM BBBB HH:mm')}
                         {a.created_by_name && <> · โดย {a.created_by_name}</>}
                       </div>
                       {!isRead && (

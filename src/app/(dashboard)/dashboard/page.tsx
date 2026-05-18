@@ -97,7 +97,7 @@ function AnnouncementItem({ item, onRead }: { item: any; onRead: (id: string) =>
         </div>
         <p className="text-[11px] text-gray-500 mt-1 line-clamp-2">{item.content}</p>
         <div className="text-[10px] text-gray-400 mt-1.5">
-          {item.created_by_name} · {dayjs(item.created_at).format('D MMM YY')}
+          {item.created_by_name} · {dayjs(item.created_at).format('D MMM BBYY')}
         </div>
       </div>
       {!item.is_read && (
@@ -115,7 +115,7 @@ export default function DashboardPage() {
   const role = user?.role
   const isOwner = role === 'owner'
   const isHROrOwner = role === 'hr' || role === 'owner'
-  const today = dayjs().format('dddd ที่ D MMMM YYYY')
+  const today = dayjs().format('dddd ที่ D MMMM BBBB')
 
   const [todayLog, setTodayLog] = useState<any>(null)
   const [summary, setSummary] = useState<any>(null)
@@ -589,7 +589,7 @@ export default function DashboardPage() {
                     cursor={{ fill: 'rgba(0,0,0,0.03)' }}
                     labelFormatter={(label, payload) => {
                       const row = payload?.[0]?.payload as any
-                      return row?.date ? dayjs(row.date).format('D MMM YY') : label
+                      return row?.date ? dayjs(row.date).format('D MMM BBYY') : label
                     }}
                   />
                   <Bar dataKey="present" name="มาทำงาน" radius={[4,4,0,0]} fill="#1D9E75" />

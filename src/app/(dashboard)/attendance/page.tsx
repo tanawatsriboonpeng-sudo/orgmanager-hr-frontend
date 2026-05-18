@@ -364,7 +364,7 @@ export default function AttendancePage() {
           <h1 className="text-xl font-semibold text-[#111110]">
             {isOwner ? 'ภาพรวมการลงเวลา' : 'ลงเวลาทำงาน'}
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">{now.format('dddd D MMMM YYYY')}</p>
+          <p className="text-sm text-gray-500 mt-0.5">{now.format('dddd D MMMM BBBB')}</p>
         </div>
         <div className="text-right">
           <div className="text-2xl font-semibold tabular-nums text-[#111110]">{now.format('HH:mm:ss')}</div>
@@ -1088,7 +1088,7 @@ function DailySummaryCard({
                         {r.nickname && <span className="text-[11px] text-gray-400">({r.nickname})</span>}
                         <span className="badge badge-purple text-[10px]">{typeTxt}</span>
                         <span className="text-[11px] tabular-nums text-gray-500">
-                          · {dayjs(r.date).format('D MMM YY')}
+                          · {dayjs(r.date).format('D MMM BBYY')}
                         </span>
                       </div>
                       <div className="text-[11px] text-gray-600 mt-1 tabular-nums">

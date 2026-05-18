@@ -912,7 +912,7 @@ function TicketDetailModal({
               <div className="flex items-center gap-2 text-[11px] text-gray-500 flex-wrap">
                 <span>{cat?.label}</span>
                 <span>·</span>
-                <span>{dayjs(ticket.created_at).format('D MMM YYYY HH:mm')}</span>
+                <span>{dayjs(ticket.created_at).format('D MMM BBBB HH:mm')}</span>
               </div>
             </div>
           </div>
