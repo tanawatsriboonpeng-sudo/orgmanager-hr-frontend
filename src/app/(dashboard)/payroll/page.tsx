@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { payrollApi, employeeApi, type PayrollRecord, type PayrollStatus, type OtBreakdownItem } from '@/lib/api'
+import { payrollApi, employeeApi, otApi, type PayrollRecord, type PayrollStatus, type OtBreakdownItem } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
   IconPlus, IconCheck, IconCash, IconTrash, IconReceipt2,
@@ -540,7 +540,11 @@ function CreateSlipModal({
         <NumField label="ปี (ค.ศ.)" value={form.year} onChange={v => setForm(p => ({ ...p, year: v }))} />
       </div>
 
-      <SlipAmountsForm form={form} setForm={setForm} />
+      <SlipAmountsForm
+        form={form}
+        setForm={setForm}
+        otContext={form.employeeId ? { employeeId: form.employeeId, month: form.month, year: form.year } : undefined}
+      />
 
       <div className="mt-4">
         <label className="label">หมายเหตุ</label>
@@ -698,7 +702,11 @@ function SlipDetailModal({
       {/* Body */}
       {editing && canManage ? (
         <div className="py-4">
-          <SlipAmountsForm form={form} setForm={setForm} />
+          <SlipAmountsForm
+            form={form}
+            setForm={setForm}
+            otContext={{ employeeId: record.employee_id, month: record.month, year: record.year }}
+          />
           <div className="mt-4">
             <label className="label">หมายเหตุ</label>
             <textarea
@@ -961,13 +969,36 @@ function OtBreakdownPanel({
 }
 
 /* ===== Shared amount form ===== */
-function SlipAmountsForm({ form, setForm }: { form: any; setForm: (fn: (p: any) => any) => void }) {
+function SlipAmountsForm({
+  form, setForm, otContext,
+}: {
+  form: any
+  setForm: (fn: (p: any) => any) => void
+  // When set, surface the "↻ ดึงจากคำขอ OT" button so HR can pull
+  // approved OT for this (employee, month, year) directly into the
+  // otHours + otAmount fields. Not set for the BulkGenerateModal flow
+  // since bulk-generate computes those columns on the server already.
+  otContext?: { employeeId: string; month: number; year: number }
+}) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
         <h3 className="text-xs font-semibold text-gray-500 mb-2">รายรับ</h3>
         <NumField label="เงินเดือนพื้นฐาน" value={form.baseSalary} onChange={v => setForm((p: any) => ({ ...p, baseSalary: v }))} money />
-        <NumField label="ค่าล่วงเวลา (OT)" value={form.otAmount} onChange={v => setForm((p: any) => ({ ...p, otAmount: v }))} money />
+        <div className="relative">
+          <NumField label="ค่าล่วงเวลา (OT)" value={form.otAmount} onChange={v => setForm((p: any) => ({ ...p, otAmount: v }))} money />
+          {otContext && (
+            <OtPullButton
+              employeeId={otContext.employeeId}
+              month={otContext.month}
+              year={otContext.year}
+              baseSalary={toNum(form.baseSalary)}
+              onApply={({ hours, amount }) => {
+                setForm((p: any) => ({ ...p, otHours: hours, otAmount: amount }))
+              }}
+            />
+          )}
+        </div>
         <NumField label="โบนัส" value={form.bonus} onChange={v => setForm((p: any) => ({ ...p, bonus: v }))} money />
         <NumField label="เบี้ยเลี้ยง/อื่นๆ" value={form.allowances} onChange={v => setForm((p: any) => ({ ...p, allowances: v }))} money />
       </div>
@@ -986,6 +1017,71 @@ function SlipAmountsForm({ form, setForm }: { form: any; setForm: (fn: (p: any) 
           <NumField label="OT (ชม.)" value={form.otHours} onChange={v => setForm((p: any) => ({ ...p, otHours: v }))} />
         </div>
       </div>
+    </div>
+  )
+}
+
+/* ===== OT Pull Button =====
+ * Sits under the "ค่าล่วงเวลา (OT)" field. Fetches all hr_approved OT
+ * requests for the (employee, month, year) and writes the rolled-up
+ * hours + computed amount back into the slip form. Computation mirrors
+ * the bulk-generate SQL: hours × 1.5 × (baseSalary / 240).
+ *
+ * Three states are surfaced so HR understands what just happened:
+ *   - idle:    "↻ ดึงจากคำขอ OT" link
+ *   - loading: "กำลังดึง…"
+ *   - done:    "✓ ดึง N ครั้ง (xx.x ชม.)" — sticks around as a hint
+ *
+ * baseSalary=0 → the amount becomes 0 too, which is confusing. We
+ * surface a small warning in that case so HR knows to fill base salary
+ * first before pulling OT.
+ */
+function OtPullButton({
+  employeeId, month, year, baseSalary, onApply,
+}: {
+  employeeId: string
+  month: number
+  year: number
+  baseSalary: number
+  onApply: (v: { hours: number; amount: number; count: number }) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ hours: number; count: number } | null>(null)
+  const [err, setErr] = useState('')
+
+  const pull = async () => {
+    setBusy(true); setErr('')
+    try {
+      const r = await otApi.approvedSummary(employeeId, month, year)
+      const hours = Number(r.data.data?.hours || 0)
+      const count = (r.data.data?.items || []).length
+      // Bulk-generate formula: hours × 1.5 × (baseSalary / 240). Keep
+      // identical to back-end logic so manual pull and "สร้างสลิป
+      // ประจำเดือน" produce the same OT amount for the same inputs.
+      const amount = baseSalary > 0
+        ? +(hours * 1.5 * (baseSalary / 240)).toFixed(2)
+        : 0
+      onApply({ hours, amount, count })
+      setResult({ hours, count })
+    } catch (e: any) {
+      setErr(e.response?.data?.message || 'ดึงไม่สำเร็จ')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="-mt-1.5 mb-2 ml-1 text-[11px]">
+      <button type="button" onClick={pull} disabled={busy || !employeeId} className="text-[#1D9E75] hover:underline disabled:text-gray-400 disabled:no-underline">
+        {busy ? 'กำลังดึง…' : '↻ ดึงจากคำขอ OT ที่อนุมัติแล้ว'}
+      </button>
+      {result && !busy && (
+        <span className="text-gray-500 ml-2">
+          ดึง {result.count} ครั้ง = {result.hours.toFixed(2)} ชม.
+          {baseSalary <= 0 && (
+            <span className="text-amber-700 ml-1">⚠ กรอกเงินเดือนก่อน เพื่อคำนวณค่า OT</span>
+          )}
+        </span>
+      )}
+      {err && <span className="text-red-600 ml-2">{err}</span>}
     </div>
   )
 }

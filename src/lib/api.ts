@@ -274,6 +274,10 @@ export const otApi = {
   pending: () => api.get('/ot/pending'),
   approve: (id: string, action: 'approved' | 'rejected', rejectedReason?: string) =>
     api.patch(`/ot/${id}/approve`, { action, rejectedReason }),
+  // Used by the payroll page to pull approved OT into a slip — returns
+  // { hours, items[] } where items have the same shape as OtBreakdownItem.
+  approvedSummary: (employeeId: string, month: number, year: number) =>
+    api.get('/ot/approved-summary', { params: { employee_id: employeeId, month, year } }),
 }
 
 // Employee APIs
