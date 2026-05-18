@@ -4,6 +4,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import {
   supportApi, aiApi,
   type SupportTicket, type SupportCategory, type SupportStatus, type SupportTicketCreate,
+  type SupportDraftIntent,
 } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
@@ -32,6 +33,19 @@ const STATUS_TH: Record<SupportStatus, string> = {
   answered: 'ตอบแล้ว',
   closed: 'ปิด',
 }
+
+// Quick-pick intents for the AI draft — they map 1:1 to the keys
+// the backend's aiController whitelists. The label is what the HR
+// clicks; the actual guidance text lives server-side so the user
+// can't smuggle arbitrary instructions through a forged label.
+const DRAFT_INTENTS: { key: SupportDraftIntent; label: string }[] = [
+  { key: 'fixed',         label: '✅ แก้ไขแล้ว' },
+  { key: 'working',       label: '🔧 กำลังตรวจสอบ' },
+  { key: 'need_info',     label: '❓ ขอข้อมูลเพิ่ม' },
+  { key: 'workaround',    label: '🩹 แนะนำ workaround' },
+  { key: 'not_a_bug',     label: '💡 ไม่ใช่บั๊ก' },
+  { key: 'feature_noted', label: '📝 รับข้อเสนอแล้ว' },
+]
 const STATUS_BADGE: Record<SupportStatus, string> = {
   open: 'bg-amber-50 text-amber-700 border-amber-200',
   answered: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -776,11 +790,20 @@ function TicketDetailModal({
   // "AI ร่าง — โปรดตรวจก่อนส่ง" reminder under the textarea.
   const [aiDrafting, setAiDrafting] = useState(false)
   const [aiDrafted, setAiDrafted] = useState(false)
+  // Optional steering for the draft. `intent` = preset key (clicked
+  // chip); `intentNote` = free-text override for cases that don't
+  // match a preset. Both are forwarded to the backend; either may be
+  // empty/null. We deliberately don't auto-clear after a draft —
+  // HR may want to tweak the note and re-draft.
+  const [intent, setIntent] = useState<SupportDraftIntent | null>(null)
+  const [intentNote, setIntentNote] = useState('')
   const askAiToDraft = async () => {
     if (aiDrafting) return
     setAiDrafting(true)
     try {
-      const { data } = await aiApi.draftTicketResponse(ticket.id)
+      const { data } = await aiApi.draftTicketResponse(ticket.id, {
+        intent, intentNote: intentNote.trim() || undefined,
+      })
       const draft = data?.data?.draft?.trim() || ''
       if (!draft) {
         flash('AI ไม่ได้ส่งคำตอบกลับมา ลองอีกครั้ง', false)
@@ -948,6 +971,51 @@ function TicketDetailModal({
                 {aiDrafting ? 'กำลังร่าง…' : 'ขอ AI ช่วยร่าง'}
               </button>
             </div>
+
+            {/* Intent chips + free-text note — these steer the AI
+                draft. Without picking anything the draft is open-
+                ended (AI guesses from ticket content); pick a chip
+                or type a note to lock in the direction (e.g. "เป็น
+                บั๊กที่ทีมแก้แล้ว"). State persists until the modal
+                closes, so HR can tweak and re-draft. */}
+            <div className="mb-2 flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] text-gray-400 mr-0.5">ไกด์ AI:</span>
+              {DRAFT_INTENTS.map(opt => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setIntent(intent === opt.key ? null : opt.key)}
+                  className={clsx(
+                    'text-[10px] px-2 py-0.5 rounded-full border transition-colors',
+                    intent === opt.key
+                      ? 'bg-[#0F6E56] text-white border-[#0F6E56]'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-[#1D9E75]/40'
+                  )}
+                  title={opt.label}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              {intent && (
+                <button
+                  type="button"
+                  onClick={() => setIntent(null)}
+                  className="text-[10px] text-gray-400 hover:text-red-600 ml-0.5"
+                  title="ล้าง"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            <input
+              type="text"
+              className="input text-[11px] mb-2 py-1.5"
+              placeholder='บอกบริบทเพิ่มให้ AI (ไม่บังคับ) เช่น "deploy แล้วเมื่อ 10 นาทีก่อน"'
+              value={intentNote}
+              onChange={e => setIntentNote(e.target.value)}
+              maxLength={500}
+            />
+
             <textarea
               className="input min-h-[100px] resize-y text-sm"
               placeholder="ข้อความถึงผู้แจ้ง — ระบบจะแจ้งเตือนผ่าน bell"

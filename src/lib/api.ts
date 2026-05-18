@@ -1093,11 +1093,26 @@ export const aiApi = {
     api.post<{ success: boolean; data: AIChatReply }>('/ai/chat', { messages }),
   // One-shot draft for the support ticket "✨ ขอ AI ช่วยร่าง" button.
   // Returns text only — no DB write. HR/owner clicks send themselves.
-  draftTicketResponse: (ticketId: string) =>
+  // Optional `intent` (preset key) and `intentNote` (free-text) let
+  // HR steer the draft — e.g. "fixed" tells AI the dev team already
+  // shipped a fix and to ask the user to refresh. Backend whitelists
+  // the preset and sandboxes the note inside <HR_INTENT> delimiters.
+  draftTicketResponse: (
+    ticketId: string,
+    opts?: { intent?: SupportDraftIntent | null; intentNote?: string },
+  ) =>
     api.post<{ success: boolean; data: { draft: string; model: string } }>(
       '/ai/draft-ticket-response',
-      { ticket_id: ticketId },
+      {
+        ticket_id: ticketId,
+        intent: opts?.intent || undefined,
+        intent_note: opts?.intentNote || undefined,
+      },
     ),
 }
+
+// Keep in sync with INTENT_PRESETS in backend aiController.js.
+export type SupportDraftIntent =
+  | 'fixed' | 'working' | 'need_info' | 'not_a_bug' | 'feature_noted' | 'workaround'
 
 export default api
