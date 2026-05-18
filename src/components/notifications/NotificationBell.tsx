@@ -149,14 +149,17 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        // Bell lives at the right edge of the sidebar user-chip, which
-        // is itself pinned to the left edge of the viewport. Anchoring
-        // the panel to right-0 of the trigger pushed it off-screen left.
-        // left-0 makes it cascade rightward into the main content area
-        // where there's room. fixed offset top-full + mt-2 keeps it
-        // right under the bell.
+        // Anchor depends on where the bell lives:
+        //   - desktop: bell is in the sidebar user-chip at the LEFT
+        //     edge of the viewport, so left-0 cascades rightward into
+        //     the main content area.
+        //   - mobile: bell is in the top bar at the RIGHT edge, so
+        //     left-0 sent the 360px panel off the right side of the
+        //     screen (overlapping the page content like the form
+        //     screenshot). right-0 hangs the panel to the LEFT
+        //     instead so it stays on-screen.
         <div
-          className="absolute left-0 top-full mt-2 w-[360px] max-w-[calc(100vw-2rem)] max-h-[70vh] bg-white border border-black/[0.08] rounded-[14px] shadow-xl z-50 flex flex-col overflow-hidden"
+          className="absolute right-0 lg:left-0 lg:right-auto top-full mt-2 w-[360px] max-w-[calc(100vw-1rem)] max-h-[70vh] bg-white border border-black/[0.08] rounded-[14px] shadow-xl z-50 flex flex-col overflow-hidden"
           onClick={e => e.stopPropagation()}
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-black/[0.06]">
