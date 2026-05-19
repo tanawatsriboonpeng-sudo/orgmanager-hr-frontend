@@ -187,7 +187,9 @@ export default function SelfieModal({ onClose, onSubmit, busy, mode = 'checkin' 
                 <span className="text-[12px] text-gray-700 leading-snug">
                   {isCheckout ? 'เช็คเอาท์นอกสถานที่ (อยู่นอกออฟฟิศ)' : 'ลงเวลานอกสถานที่ (ทำงานนอกออฟฟิศ)'}
                   <span className="block text-[11px] text-gray-400">
-                    ต้องระบุเหตุผลและรอ HR/เจ้าของอนุมัติ
+                    {isCheckout
+                      ? 'ระบุเหตุผล — บันทึกให้ HR เห็น (ไม่ต้องรออนุมัติ)'
+                      : 'ต้องระบุเหตุผลและรอ HR/เจ้าของอนุมัติ'}
                   </span>
                 </span>
               </label>

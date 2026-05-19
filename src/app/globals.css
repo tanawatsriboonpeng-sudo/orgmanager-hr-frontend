@@ -219,10 +219,13 @@ body {
     margin: 14mm;
   }
 
-  /* Hide everything by default, then re-show only the print
-     root + its ancestors. Each ancestor is set to display:
-     contents so it stops constraining width / scrolling. */
-  body * {
+  /* Hide everything-else, but ONLY when the page has opted into
+     "document mode" by adding .print-doc-root (or the legacy
+     .payslip-print-root alias). Without that guard, every Ctrl+P
+     across the app would yield a blank sheet — including pages
+     that just want the browser's default print behavior. */
+  body:has(.print-doc-root) *,
+  body:has(.payslip-print-root) * {
     visibility: hidden;
   }
   /* Generic class — slap .print-doc-root on the wrapper of any
